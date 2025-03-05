@@ -1,3 +1,5 @@
+import cv2
+import numpy as np
 from torch.utils.data import Dataset
 import torchvision.transforms as transforms
 from PIL import Image
@@ -5,7 +7,7 @@ from pathlib import Path
 
 
 class ImagePathDataset(Dataset):
-    def __init__(self, image_paths, image_size=(256, 256), flip=False, to_normal=False):
+    def __init__(self, image_paths, image_size=(496, 768), flip=False, to_normal=False):
         self.image_size = image_size
         self.image_paths = image_paths
         self._length = len(image_paths)
@@ -25,8 +27,9 @@ class ImagePathDataset(Dataset):
 
         transform = transforms.Compose([
             transforms.RandomHorizontalFlip(p=p),
+            transforms.RandomRotation(degrees=2),
             transforms.Resize(self.image_size),
-            transforms.ToTensor()
+            transforms.ToTensor(),
         ])
 
         img_path = self.image_paths[index]
@@ -36,14 +39,19 @@ class ImagePathDataset(Dataset):
         except BaseException as e:
             print(img_path)
 
-        if not image.mode == 'RGB':
-            image = image.convert('RGB')
+        # if not image.mode == 'RGB':
+        #    image = image.convert('RGB')
 
         image = transform(image)
+
+        pad = transforms.Pad((0, 8, 0, 8), fill=0)
+        image = pad(image)
 
         if self.to_normal:
             image = (image - 0.5) * 2.
             image.clamp_(-1., 1.)
+
+        # image = image.repeat(3, 1, 1)
 
         image_name = Path(img_path).stem
         return image, image_name

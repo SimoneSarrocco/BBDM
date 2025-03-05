@@ -1,5 +1,6 @@
 import os
 
+import numpy as np
 import torch.optim.lr_scheduler
 from torch.utils.data import DataLoader
 
@@ -204,19 +205,19 @@ class BBDMRunner(DiffusionBaseRunner):
         # sample = samples[-1]
         sample = net.sample(x_cond, clip_denoised=self.config.testing.clip_denoised).to('cpu')
         image_grid = get_image_grid(sample, grid_size, to_normal=self.config.data.dataset_config.to_normal)
-        im = Image.fromarray(image_grid)
+        im = Image.fromarray(image_grid).convert('L')  # todo
         im.save(os.path.join(sample_path, 'skip_sample.png'))
         if stage != 'test':
             self.writer.add_image(f'{stage}_skip_sample', image_grid, self.global_step, dataformats='HWC')
 
         image_grid = get_image_grid(x_cond.to('cpu'), grid_size, to_normal=self.config.data.dataset_config.to_normal)
-        im = Image.fromarray(image_grid)
+        im = Image.fromarray(image_grid).convert('L')  # todo
         im.save(os.path.join(sample_path, 'condition.png'))
         if stage != 'test':
             self.writer.add_image(f'{stage}_condition', image_grid, self.global_step, dataformats='HWC')
 
         image_grid = get_image_grid(x.to('cpu'), grid_size, to_normal=self.config.data.dataset_config.to_normal)
-        im = Image.fromarray(image_grid)
+        im = Image.fromarray(image_grid).convert('L')  # todo
         im.save(os.path.join(sample_path, 'ground_truth.png'))
         if stage != 'test':
             self.writer.add_image(f'{stage}_ground_truth', image_grid, self.global_step, dataformats='HWC')
