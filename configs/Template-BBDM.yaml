@@ -1,34 +1,34 @@
 # Brownian Bridge Diffusion Model Template(Pixel Space)
 runner: "BBDMRunner"
 training:
-  n_epochs: 200
-  n_steps: 400000
-  save_interval: 20
-  sample_interval: 2
-  validation_interval: 20
-  accumulate_grad_batches: 2
+  n_epochs: 1000
+  n_steps: 990000
+  save_interval: 50
+  sample_interval: 1
+  validation_interval: 1
+  accumulate_grad_batches: 1
 
 testing:
   clip_denoised: True
-  sample_num: 5
+  sample_num: 170
 
 data:
-  dataset_name: 'dataset_name'
+  dataset_name: 'data'
   dataset_type: 'custom_aligned'
   dataset_config:
-    dataset_path: 'dataset_path'
-    image_size: 256
-    channels: 3
+    dataset_path: '/home/simone.sarrocco/thesis/project/models/diffusion_model/BBDM/data'
+    image_size: 248
+    channels: 1
     to_normal: True
     flip: False
   train:
-    batch_size: 8
+    batch_size: 1
     shuffle: True
   val:
-    batch_size: 8
-    shuffle: True
+    batch_size: 1
+    shuffle: False
   test:
-    batch_size: 8
+    batch_size: 1
     # shuffle: False
 
 model:
@@ -48,14 +48,14 @@ model:
 
   CondStageParams:
     n_stages: 2
-    in_channels: 3
-    out_channels: 3
+    in_channels: 1
+    out_channels: 1
 
   BB:
     optimizer:
       weight_decay: 0.000
       optimizer: 'Adam'
-      lr: 1.e-4
+      lr: 1.e-5
       beta1: 0.9
 
     lr_scheduler:
@@ -79,10 +79,10 @@ model:
       max_var: 1.0 # maximum variance
 
       UNetParams:
-        image_size: 64
-        in_channels: 6
-        model_channels: 128
-        out_channels: 3
+        image_size: 256
+        in_channels: 1
+        model_channels: 64
+        out_channels: 1
         num_res_blocks: 2
         attention_resolutions: !!python/tuple
           - 32
@@ -97,7 +97,7 @@ model:
         num_heads: 8
         num_head_channels: 64
         use_scale_shift_norm: True
-        resblock_updown: True
+        resblock_updown: False
         use_spatial_transformer: False
         context_dim:
-        condition_key: "SpatialRescaler" # options {"SpatialRescaler", "first_stage", "nocond"}
+        condition_key: "nocond" # options {"SpatialRescaler", "first_stage", "nocond"}

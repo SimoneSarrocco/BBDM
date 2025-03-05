@@ -15,7 +15,7 @@ def parse_args_and_config():
     parser = argparse.ArgumentParser(description=globals()['__doc__'])
 
     parser.add_argument('-c', '--config', type=str, default='BB_base.yml', help='Path to the config file')
-    parser.add_argument('-s', '--seed', type=int, default=1234, help='Random seed')
+    parser.add_argument('-s', '--seed', type=int, default=1927, help='Random seed')
     parser.add_argument('-r', '--result_path', type=str, default='results', help="The directory to save results")
 
     parser.add_argument('-t', '--train', action='store_true', default=False, help='train the model')
@@ -54,7 +54,7 @@ def parse_args_and_config():
     return namespace_config, dict_config
 
 
-def set_random_seed(SEED=1234):
+def set_random_seed(SEED=1927):
     random.seed(SEED)
     np.random.seed(SEED)
     torch.manual_seed(SEED)

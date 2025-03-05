@@ -1,23 +1,23 @@
 # Latent Brownian Bridge Diffusion Model Template(Latent Space)
 runner: "BBDMRunner"
 training:
-  n_epochs: 100
-  n_steps: 200000
-  save_interval: 2
-  sample_interval: 2
-  validation_interval: 2
+  n_epochs: 2000
+  n_steps: 1980000
+  save_interval: 50
+  sample_interval: 10
+  validation_interval: 1
   accumulate_grad_batches: 4
 
 testing:
-  clip_denoised: False
-  sample_num: 5
+  clip_denoised: True
+  sample_num: 170
 
 data:
-  dataset_name: 'dataset_name'
+  dataset_name: 'data'
   dataset_type: 'custom_aligned'
   dataset_config:
-    dataset_path: 'dataset_path'
-    image_size: 256
+    dataset_path: '/home/simone.sarrocco/thesis/project/models/diffusion_model/BBDM/data'
+    image_size: 496
     channels: 3
     to_normal: True
     flip: True
@@ -26,10 +26,10 @@ data:
     shuffle: True
   val:
     batch_size: 8
-    shuffle: True
+    shuffle: False
   test:
     batch_size: 8
-    # shuffle: False
+    shuffle: False
 
 model:
   model_name: "LBBDM-f8" # part of result path
@@ -53,13 +53,13 @@ model:
 
   VQGAN:
     params:
-      ckpt_path: 'results/VQGAN-new/CelebAMaskHQ-f8.ckpt'
+      ckpt_path: '/home/simone.sarrocco/thesis/project/models/diffusion_model/BBDM/data/model_f8.ckpt'
       embed_dim: 4
       n_embed: 16384
       ddconfig:
         double_z: false
         z_channels: 4
-        resolution: 256
+        resolution: 512
         in_channels: 3
         out_ch: 3
         ch: 128
@@ -78,9 +78,9 @@ model:
 
   BB:
     optimizer:
-      weight_decay: 0.000
+      weight_decay: 0.01
       optimizer: 'Adam'
-      lr: 1.e-4
+      lr: 5.e-5
       beta1: 0.9
 
     lr_scheduler:
@@ -92,8 +92,8 @@ model:
 
     params:
       mt_type: 'linear' # options {'linear', 'sin'}
-      objective: 'grad' # options {'grad', 'noise', 'ysubx'}
-      loss_type: 'l1' # options {'l1', 'l2'}
+      objective: 'noise' # options {'grad', 'noise', 'ysubx'}
+      loss_type: 'l2' # options {'l1', 'l2'}
 
       skip_sample: True
       sample_type: 'linear' # options {"linear", "sin"}
@@ -104,17 +104,19 @@ model:
       max_var: 1.0 # maximum variance
 
       UNetParams:
-        image_size: 32
-        in_channels: 4
+        image_size: 64
+        in_channels: 8
         model_channels: 128
         out_channels: 4
         num_res_blocks: 2
         attention_resolutions: !!python/tuple
-          - 32
           - 16
           - 8
+          - 4
+          - 2
         channel_mult: !!python/tuple
           - 1
+          - 2
           - 4
           - 8
         conv_resample: True
@@ -125,4 +127,4 @@ model:
         resblock_updown: True
         use_spatial_transformer: False
         context_dim:
-        condition_key: "nocond" # options {"SpatialRescaler", "first_stage", "nocond"}
+        condition_key: "SpatialRescaler" # options {"SpatialRescaler", "first_stage", "nocond"}

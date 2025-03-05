@@ -90,8 +90,8 @@ class BrownianBridgeModel(nn.Module):
             context = None
         else:
             context = y if context is None else context
-        b, c, h, w, device, img_size, = *x.shape, x.device, self.image_size
-        assert h == img_size and w == img_size, f'height and width of image must be {img_size}'
+        b, c, h, w, device, img_height, img_width = *x.shape, x.device, self.image_size, 48
+        assert h == img_height and w == img_width, f'height and width of image must be {img_height, img_width}, but they are {h, w}'
         t = torch.randint(0, self.num_timesteps, (b,), device=device).long()
         return self.p_losses(x, y, context, t)
 
@@ -100,7 +100,7 @@ class BrownianBridgeModel(nn.Module):
         model loss
         :param x0: encoded x_ori, E(x_ori) = x0
         :param y: encoded y_ori, E(y_ori) = y
-        :param y_ori: original source domain image
+        :param context: original source domain image
         :param t: timestep
         :param noise: Standard Gaussian Noise
         :return: loss
