@@ -1,8 +1,8 @@
 # Latent Brownian Bridge Diffusion Model Template(Latent Space)
 runner: "BBDMRunner"
 training:
-  n_epochs: 100
-  n_steps: 200000
+  n_epochs: 1000
+  n_steps: 990000
   save_interval: 2
   sample_interval: 2
   validation_interval: 2
@@ -10,15 +10,15 @@ training:
 
 testing:
   clip_denoised: False
-  sample_num: 5
+  sample_num: 170
 
 data:
-  dataset_name: 'dataset_name'
+  dataset_name: 'data'
   dataset_type: 'custom_aligned'
   dataset_config:
-    dataset_path: 'dataset_path'
-    image_size: 256
-    channels: 3
+    dataset_path: '/home/simone.sarrocco/thesis/project/models/diffusion_model/BBDM/data'
+    image_size: 496
+    channels: 1
     to_normal: True
     flip: True
   train:
@@ -32,7 +32,7 @@ data:
     # shuffle: False
 
 model:
-  model_name: "LBBDM-f16" # part of result path
+  model_name: "LBBDM-f16-4th" # part of result path
   model_type: "LBBDM" # specify a module
   latent_before_quant_conv: False
   normalize_latent: False
@@ -53,22 +53,19 @@ model:
 
   VQGAN:
     params:
-      ckpt_path: 'results/VQGAN/CelebAMaskHQ-f16.ckpt'
-      embed_dim: 8
-      n_embed: 16384
+      ckpt_path: '/home/simone.sarrocco/thesis/project/models/diffusion_model/BBDM/data/vqgan_epoch_250.pth'
+      embed_dim: 32
+      n_embed: 256
       ddconfig:
         double_z: false
-        z_channels: 8
-        resolution: 256
-        in_channels: 3
-        out_ch: 3
-        ch: 128
+        z_channels: 2
+        resolution: 512
+        in_channels: 1
+        out_ch: 1
+        ch: 256
         ch_mult: !!python/tuple
           - 1
-          - 1
           - 2
-          - 2
-          - 4
         num_res_blocks: 2
         attn_resolutions:
           - 16
@@ -105,10 +102,10 @@ model:
       max_var: 1.0 # maximum variance
 
       UNetParams:
-        image_size: 16
-        in_channels: 8
-        model_channels: 128
-        out_channels: 8
+        image_size: 128
+        in_channels: 1
+        model_channels: 64
+        out_channels: 1
         num_res_blocks: 2
         attention_resolutions: !!python/tuple
           - 16
