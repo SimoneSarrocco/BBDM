@@ -53,7 +53,7 @@ model:
 
   VQGAN:
     params:
-      ckpt_path: '/home/simone.sarrocco/thesis/project/models/diffusion_model/BBDM/data/vqgan_epoch_250.pth'
+      ckpt_path: '/home/simone.sarrocco/thesis/project/models/diffusion_model/BBDM/data/vqgan.ckpt'
       embed_dim: 32
       n_embed: 256
       ddconfig:
