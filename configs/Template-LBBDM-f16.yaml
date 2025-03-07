@@ -53,19 +53,21 @@ model:
 
   VQGAN:
     params:
-      ckpt_path: '/home/simone.sarrocco/thesis/project/models/diffusion_model/BBDM/data/vqgan.ckpt'
+      ckpt_path: '/home/simone.sarrocco/thesis/project/models/diffusion_model/GenerativeModels/tutorials/generative/2d_vqgan/only_pseudoart100_2nd/checkpoints/vqgan_epoch_3.ckpt'
       embed_dim: 32
       n_embed: 256
       ddconfig:
         double_z: false
-        z_channels: 2
+        z_channels: 32
         resolution: 512
         in_channels: 1
         out_ch: 1
-        ch: 256
+        ch: 64
         ch_mult: !!python/tuple
           - 1
           - 2
+          - 4
+          - 8
         num_res_blocks: 2
         attn_resolutions:
           - 16
@@ -102,7 +104,7 @@ model:
       max_var: 1.0 # maximum variance
 
       UNetParams:
-        image_size: 128
+        image_size: 64
         in_channels: 1
         model_channels: 64
         out_channels: 1
