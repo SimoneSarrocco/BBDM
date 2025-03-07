@@ -19,7 +19,7 @@ data:
     dataset_path: '/home/simone.sarrocco/thesis/project/models/diffusion_model/BBDM/data'
     image_size: 496
     channels: 1
-    to_normal: True
+    to_normal: False
     flip: True
   train:
     batch_size: 8
