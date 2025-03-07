@@ -1,13 +1,28 @@
+import os
+import sys
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from types import SimpleNamespace
 import pdb
-
 import torch
 import torch.nn.functional as F
 import pytorch_lightning as pl
-
 from model.VQGAN.model import Encoder, Decoder
 from model.VQGAN.quantize import VectorQuantizer2 as VectorQuantizer
 from model.VQGAN.quantize import GumbelQuantize
 import importlib
+from pytorch_lightning.callbacks import ModelCheckpoint, TQDMProgressBar
+import numpy as np
+from dataset import OCTDataset
+from torch.utils.data import DataLoader
+from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
+from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
+
+
+def mean_flat(tensor):
+    """
+    Take the mean over all non-batch dimensions.
+    """
+    return tensor.mean(dim=list(range(1, len(tensor.shape))))
 
 
 def get_obj_from_str(string, reload=False):
@@ -23,7 +38,8 @@ def instantiate_from_config(config):
     if not "target" in config:
         raise KeyError("Expected key `target` to instantiate.")
     if config.__contains__('params'):
-        return get_obj_from_str(config["target"])(**vars(config['params']))
+        # return get_obj_from_str(config["target"])(**vars(config['params']))
+        return get_obj_from_str(config["target"])(**config['params'])
     else:
         return get_obj_from_str(config["target"])()
 
@@ -34,6 +50,7 @@ class VQModel(pl.LightningModule):
                  lossconfig,
                  n_embed,
                  embed_dim,
+                 lr,
                  ckpt_path=None,
                  ignore_keys=[],
                  image_key="image",
@@ -46,11 +63,13 @@ class VQModel(pl.LightningModule):
         self.image_key = image_key
         self.encoder = Encoder(**vars(ddconfig))
         self.decoder = Decoder(**vars(ddconfig))
-        self.loss = instantiate_from_config(vars(lossconfig))
+        # self.loss = instantiate_from_config(vars(lossconfig))
+        self.loss = instantiate_from_config(lossconfig)
         self.quantize = VectorQuantizer(n_embed, embed_dim, beta=0.25,
                                         remap=remap, sane_index_shape=sane_index_shape)
         self.quant_conv = torch.nn.Conv2d(ddconfig.z_channels, embed_dim, 1)
         self.post_quant_conv = torch.nn.Conv2d(embed_dim, ddconfig.z_channels, 1)
+        self.learning_rate = lr
         if ckpt_path is not None:
             self.init_from_ckpt(ckpt_path, ignore_keys=ignore_keys)
         self.image_key = image_key
@@ -59,10 +78,13 @@ class VQModel(pl.LightningModule):
             self.register_buffer("colorize", torch.randn(3, colorize_nlabels, 1, 1))
         if monitor is not None:
             self.monitor = monitor
+        self.psnr_metric = PeakSignalNoiseRatio().to(self.device)
+        self.ssim_metric = StructuralSimilarityIndexMeasure().to(self.device)
+        self.lpips_metric = LearnedPerceptualImagePatchSimilarity(net_type='vgg', normalize=True).to(self.device)
 
     def init_from_ckpt(self, path, ignore_keys=list()):
-        # sd = torch.load(path, map_location="cpu", weights_only=False)["state_dict"]
-        sd = torch.load(path, map_location="cpu")
+        sd = torch.load(path, map_location="cpu", weights_only=False)["state_dict"]
+        # sd = torch.load(path, map_location="cpu")
         keys = list(sd.keys())
         for k in keys:
             for ik in ignore_keys:
@@ -97,13 +119,18 @@ class VQModel(pl.LightningModule):
         x = batch
         if len(x.shape) == 3:
             x = x[..., None]
-        x = x.permute(0, 3, 1, 2).to(memory_format=torch.contiguous_format)
+        # x = x.permute(0, 3, 1, 2).to(memory_format=torch.contiguous_format)
         return x.float()
 
-    def training_step(self, batch, batch_idx, optimizer_idx):
-        x = self.get_input(batch, self.image_key)
+    def training_step(self, batch, batch_idx):
+        # self.trainer.training = True
+        self.automatic_optimization = False  # Enable manual optimization
+        # opt_ae, opt_disc = self.optimizers()
+
+        x = self.get_input(batch)
         xrec, qloss = self(x)
 
+        """
         if optimizer_idx == 0:
             # autoencode
             aeloss, log_dict_ae = self.loss(qloss, x, xrec, optimizer_idx, self.global_step,
@@ -120,23 +147,135 @@ class VQModel(pl.LightningModule):
             self.log("train/discloss", discloss, prog_bar=True, logger=True, on_step=True, on_epoch=True)
             self.log_dict(log_dict_disc, prog_bar=False, logger=True, on_step=True, on_epoch=True)
             return discloss
+        """
+        # ------------------
+        # Autoencoder Step
+        # ------------------
+        # self.toggle_optimizer(opt_ae)
+
+        aeloss, log_dict_ae = self.loss(
+            qloss, x, xrec, 0, self.global_step,
+            last_layer=self.get_last_layer(), split="train"
+        )
+
+        # self.log_dict(log_dict_ae, prog_bar=False, on_step=True, on_epoch=True)
+
+        # opt_ae.zero_grad()
+        # self.manual_backward(aeloss)
+        # opt_ae.step()
+
+        # self.untoggle_optimizer(opt_ae)
+
+        # if self.trainer is not None and hasattr(self.trainer, 'training') and self.trainer.training:
+        #    self.log("train/aeloss", aeloss, prog_bar=True, on_step=True, on_epoch=True)
+
+        # ------------------
+        # Discriminator Step
+        # ------------------
+        # self.toggle_optimizer(opt_disc)
+
+        discloss, log_dict_disc = self.loss(
+            qloss, x, xrec, 1, self.global_step,
+            last_layer=self.get_last_layer(), split="train"
+        )
+
+        # self.log_dict(log_dict_disc, prog_bar=False, on_step=True, on_epoch=True)
+
+        # opt_disc.zero_grad()
+        # self.manual_backward(discloss)
+        # opt_disc.step()
+
+        # self.untoggle_optimizer(opt_disc)
+
+        # if self.trainer is not None and hasattr(self.trainer, 'training') and self.trainer.training:
+        #    self.log("train/discloss", discloss, prog_bar=True, on_step=True, on_epoch=True)
+
+        # return {"train/aeloss": aeloss, "train/discloss": discloss}
+        # Return results instead of logging them
+        return {
+            "x": x,
+            "xrec": xrec,
+            "qloss": qloss,
+            "aeloss": aeloss,
+            "discloss": discloss,
+            "log_dict_ae": log_dict_ae,
+            "log_dict_disc": log_dict_disc
+        }
 
     def validation_step(self, batch, batch_idx):
+        # print(f"Validation Step {batch_idx} Started")  # Debugging print
+        # self.trainer.testing = True
+        # self.trainer.validating = True
+        # if not self.trainer or not self.trainer.training:
+        #    return
+
         x = self.get_input(batch)
         xrec, qloss = self(x)
+
         aeloss, log_dict_ae = self.loss(qloss, x, xrec, 0, self.global_step,
-                                            last_layer=self.get_last_layer(), split="val")
+                                        last_layer=self.get_last_layer(), split="val")
 
         discloss, log_dict_disc = self.loss(qloss, x, xrec, 1, self.global_step,
                                             last_layer=self.get_last_layer(), split="val")
-        rec_loss = log_dict_ae["val/rec_loss"]
-        self.log("val/rec_loss", rec_loss,
-                   prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=True)
-        self.log("val/aeloss", aeloss,
-                   prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=True)
-        self.log_dict(log_dict_ae)
-        self.log_dict(log_dict_disc)
-        return self.log_dict
+        # print(f"Validation Step {batch_idx} Completed Forward Pass")  # Debugging print
+
+        # Debugging: Check if loss dictionaries are empty
+        # print(f"log_dict_ae: {log_dict_ae}")
+        # print(f"log_dict_disc: {log_dict_disc}")
+        # rec_loss = log_dict_ae.get("val/rec_loss", torch.tensor(0.0, device=self.device))
+
+        # --- Fix: Ensure Trainer is running before calling `self.log()` ---
+        # if self.trainer is None or self.trainer.training is False:
+        #     print("⚠️ WARNING: Trainer is not initialized properly or not in training mode!")
+        #    return rec_loss  # Skip logging and return loss safely
+
+        # if self.trainer is not None:
+            # Log only if `Trainer` is running validation
+        #    self.log("val/rec_loss", rec_loss, prog_bar=True, on_step=False, on_epoch=True, sync_dist=True)
+        #    self.log("val/aeloss", aeloss, prog_bar=True, on_step=False, on_epoch=True, sync_dist=True)
+        #    self.log("val/discloss", discloss, prog_bar=True, on_step=False, on_epoch=True, sync_dist=True)
+
+        # Ensure dictionaries exist before logging
+        # if log_dict_ae:
+        #    self.log_dict(log_dict_ae, prog_bar=False, on_step=False, on_epoch=True)
+        # if log_dict_disc:
+        #    self.log_dict(log_dict_disc, prog_bar=False, on_step=False, on_epoch=True)
+
+        # --- Fix: Ensure the metrics are moved to the correct device ---
+        # x, xrec = x.to(self.device), xrec.to(self.device)
+
+        # Compute evaluation metrics
+        psnr = self.psnr_metric(xrec, x)
+        ssim = self.ssim_metric(xrec, x)
+        mse = mean_flat((xrec - x) ** 2).mean()
+
+        # Convert grayscale to 3 channels for LPIPS
+        # xrec_3_channels = xrec.repeat(1, 3, 1, 1)  # (Batch, Channels, Height, Width)
+        # x_3_channels = x.repeat(1, 3, 1, 1)  # (Batch, Channels, Height, Width)
+
+        # Ensure LPIPS is correctly computed
+        # lpips_val = self.lpips_metric(xrec_3_channels, x_3_channels)
+
+        # if self.trainer is not None:
+            # Log computed metrics
+        #    self.log("val/psnr", psnr, prog_bar=True, on_step=False, on_epoch=True, sync_dist=True)
+        #    self.log("val/ssim", ssim, prog_bar=True, on_step=False, on_epoch=True, sync_dist=True)
+        #    self.log("val/mse", mse, prog_bar=True, on_step=False, on_epoch=True, sync_dist=True)
+        #    self.log("val/lpips", lpips_val, prog_bar=True, on_step=False, on_epoch=True, sync_dist=True)
+
+        # return self.log_dict
+        # return {"val/rec_loss", rec_loss}
+        return {
+            "val/rec_loss": log_dict_ae.get("val/rec_loss", torch.tensor(0.0, device=self.device)),
+            "val/aeloss": aeloss,
+            "val/discloss": discloss,
+            "val/psnr": psnr,
+            "val/ssim": ssim,
+            "val/mse": mse,
+            # "val/lpips": lpips_val,
+            "log_dict_ae": log_dict_ae,
+            "log_dict_disc": log_dict_disc
+        }
 
     def configure_optimizers(self):
         lr = self.learning_rate
@@ -381,3 +520,209 @@ class GumbelVQ(VQModel):
         log["inputs"] = x
         log["reconstructions"] = x_rec
         return log
+
+
+# --- Lightning Module for Training ---
+# We wrap the VQModel in a LightningModule for training convenience.
+class LitVQGAN(pl.LightningModule):
+    def __init__(self, ddconfig, lossconfig, n_embed, embed_dim, lr=1e-4, ckpt_path=None, ignore_keys=[]):
+        super().__init__()
+        # self.learning_rate = lr
+        self.model = VQModel(ddconfig=ddconfig,
+                             lossconfig=lossconfig,
+                             n_embed=n_embed,
+                             embed_dim=embed_dim,
+                             lr=lr,
+                             ckpt_path=ckpt_path,
+                             ignore_keys=ignore_keys,
+                             )
+        self.automatic_optimization = False  # Enable manual optimization
+    def forward(self, x):
+        return self.model(x)
+
+    def training_step(self, batch, batch_idx):
+        # Get optimizers
+        opt_ae, opt_disc = self.optimizers()
+
+        # Get model outputs without optimization
+        outputs = self.model.training_step(batch, batch_idx)
+
+        # Extract values
+        aeloss = outputs["aeloss"]
+        discloss = outputs["discloss"]
+        log_dict_ae = outputs["log_dict_ae"]
+        log_dict_disc = outputs["log_dict_disc"]
+
+        # ------------------
+        # Autoencoder Step
+        # ------------------
+        self.toggle_optimizer(opt_ae)
+
+        opt_ae.zero_grad()
+        self.manual_backward(aeloss)
+        opt_ae.step()
+
+        self.untoggle_optimizer(opt_ae)
+
+        # ------------------
+        # Discriminator Step
+        # ------------------
+        self.toggle_optimizer(opt_disc)
+
+        opt_disc.zero_grad()
+        self.manual_backward(discloss)
+        opt_disc.step()
+
+        self.untoggle_optimizer(opt_disc)
+
+        # Logging (now handled by LitVQGAN)
+        self.log("train/aeloss", aeloss, prog_bar=True, on_step=True, on_epoch=True)
+        self.log("train/discloss", discloss, prog_bar=True, on_step=True, on_epoch=True)
+
+        # Log dictionaries if needed
+        self.log_dict(log_dict_ae, prog_bar=False, on_step=True, on_epoch=True)
+        self.log_dict(log_dict_disc, prog_bar=False, on_step=True, on_epoch=True)
+
+        # return self.model.training_step(batch, batch_idx)
+        return {"train/aeloss": aeloss, "train/discloss": discloss}
+
+    def validation_step(self, batch, batch_idx):
+        # Get model outputs
+        outputs = self.model.validation_step(batch, batch_idx)
+
+        # Log metrics
+        # self.log("val/rec_loss", outputs["val/rec_loss"], prog_bar=True, on_step=False, on_epoch=True, sync_dist=True)
+        self.log("val/aeloss", outputs["val/aeloss"], prog_bar=True, on_step=False, on_epoch=True, sync_dist=True)
+        self.log("val/discloss", outputs["val/discloss"], prog_bar=True, on_step=False, on_epoch=True, sync_dist=True)
+        self.log("val/psnr", outputs["val/psnr"], prog_bar=True, on_step=False, on_epoch=True, sync_dist=True)
+        self.log("val/ssim", outputs["val/ssim"], prog_bar=True, on_step=False, on_epoch=True, sync_dist=True)
+        self.log("val/mse", outputs["val/mse"], prog_bar=True, on_step=False, on_epoch=True, sync_dist=True)
+        # self.log("val/lpips", outputs["val/lpips"], prog_bar=True, on_step=False, on_epoch=True, sync_dist=True)
+
+        # Create modified dictionaries to avoid duplicate logging
+        log_dict_ae = outputs["log_dict_ae"].copy() if outputs["log_dict_ae"] else {}
+        log_dict_disc = outputs["log_dict_disc"].copy() if outputs["log_dict_disc"] else {}
+
+        # Remove keys that we've already logged directly
+        for key in ["val/rec_loss"]:
+            if key in log_dict_ae:
+                del log_dict_ae[key]
+
+        # Log the cleaned dictionaries if they still have entries
+        if log_dict_ae:
+            self.log_dict(log_dict_ae, prog_bar=False, on_step=False, on_epoch=True)
+        if log_dict_disc:
+            self.log_dict(log_dict_disc, prog_bar=False, on_step=False, on_epoch=True)
+
+        # Log rec_loss separately to avoid conflicts
+        self.log("val/rec_loss", outputs["val/rec_loss"], prog_bar=True, on_step=False, on_epoch=True, sync_dist=True)
+
+        return outputs["val/rec_loss"]  # Return the primary validation metric
+        # return self.model.validation_step(batch, batch_idx)
+
+    def configure_optimizers(self):
+        return self.model.configure_optimizers()
+
+
+# --- Dummy Configuration Classes ---
+# These dummy classes mimic the YAML configuration used in BBDM.
+# Adjust z_channels if needed. Here we set z_channels to 32 to match our architecture.
+class DummyDDConfig:
+    def __init__(self):
+        self.double_z = False
+        self.z_channels = 32      # Make sure this matches your encoder output
+        self.resolution = 512
+        self.in_channels = 1
+        self.out_ch = 1
+        self.ch = 64
+        self.ch_mult = (1, 2, 4, 8)
+        self.num_res_blocks = 2
+        self.attn_resolutions = [16]
+        self.dropout = 0.0
+
+
+if __name__ == "__main__":
+    ddconfig = DummyDDConfig()
+
+    train = np.load('/home/simone.sarrocco/thesis/project/data/train_set_patient_split.npz')['images']
+    val = np.load('/home/simone.sarrocco/thesis/project/data/val_set_patient_split.npz')['images']
+    test = np.load('/home/simone.sarrocco/thesis/project/data/test_set_patient_split.npz')['images']
+
+    train_pseudoart100_images = []
+    val_pseudoart100_images = []
+    test_pseudoart100_images = []
+
+    for i in range(len(train)):
+        image = torch.tensor(train[i, -1:, ...])
+        train_pseudoart100_images.append(image)
+    train_pseudoart100_images = torch.stack(train_pseudoart100_images, 0)
+
+    for i in range(len(val)):
+        image = torch.tensor(val[i, -1:, ...])
+        val_pseudoart100_images.append(image)
+    val_pseudoart100_images = torch.stack(val_pseudoart100_images, 0)
+
+    for i in range(len(test)):
+        image = torch.tensor(test[i, -1:, ...])
+        test_pseudoart100_images.append(image)
+    test_pseudoart100_images = torch.stack(test_pseudoart100_images, 0)
+
+    train_data = OCTDataset(train_pseudoart100_images)
+    train_loader = DataLoader(train_data, batch_size=1, shuffle=False, num_workers=63)
+    print(f'Shape of training set: {train_pseudoart100_images.shape}')
+
+    val_data = OCTDataset(val_pseudoart100_images)
+    val_loader = DataLoader(val_data, batch_size=1, shuffle=False, num_workers=63)
+    print(f'Shape of validation set: {val_pseudoart100_images.shape}')
+
+    lossconfig = {
+        "target": "vqperceptual.VQLPIPSWithDiscriminator",  # Adjust module path as needed.
+        "params": {
+            "disc_start": 10000,  # Step at which discriminator loss begins to be applied.
+            "codebook_weight": 1.0,
+            "pixelloss_weight": 1.0,
+            "disc_num_layers": 3,
+            "disc_in_channels": 1,  # For grayscale OCT images; if RGB, use 3.
+            "disc_factor": 1.0,
+            "disc_weight": 1.0,
+            "perceptual_weight": 1.0,
+            "use_actnorm": False,
+            "disc_conditional": False,
+            "disc_ndf": 64,
+            "disc_loss": "hinge"
+        }
+    }
+
+    # lossconfig_ns = SimpleNamespace(**lossconfig)
+
+    # --- Instantiate the Lightning Module ---
+    lit_model = LitVQGAN(
+        ddconfig=ddconfig,
+        lossconfig=lossconfig,
+        n_embed=256,
+        embed_dim=32,
+        lr=1e-4,
+        ckpt_path=None
+    )
+
+    # --- Set Up Checkpointing ---
+    checkpoint_callback = ModelCheckpoint(
+        monitor="val/rec_loss",
+        dirpath="checkpoints",
+        filename="vqgan-{epoch:02d}-{val_rec_loss:.2f}",
+        save_top_k=1,
+        mode="min",
+        every_n_epochs=10  # Save every 10 epochs
+    )
+
+    # --- Initialize Trainer and Start Training ---
+    trainer = pl.Trainer(
+        accelerator='gpu',
+        devices=1,
+        max_epochs=100,
+        callbacks=[TQDMProgressBar(), checkpoint_callback],
+        # progress_bar_refresh_rate=20,
+
+    )
+    print("🔥 Trainer is starting training!")
+    trainer.fit(lit_model, train_loader, val_loader)
