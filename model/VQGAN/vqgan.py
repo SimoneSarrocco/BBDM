@@ -120,6 +120,7 @@ class VQModel(pl.LightningModule):
         if len(x.shape) == 3:
             x = x[..., None]
         # x = x.permute(0, 3, 1, 2).to(memory_format=torch.contiguous_format)
+        x = x.to(memory_format=torch.contiguous_format)
         return x.float()
 
     def training_step(self, batch, batch_idx):
