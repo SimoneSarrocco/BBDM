@@ -34,7 +34,7 @@ data:
 model:
   model_name: "LBBDM-f16-4th" # part of result path
   model_type: "LBBDM" # specify a module
-  latent_before_quant_conv: False
+  latent_before_quant_conv: True
   normalize_latent: False
   only_load_latent_mean_std: False
   # model_load_path:  # model checkpoint path
@@ -53,7 +53,7 @@ model:
 
   VQGAN:
     params:
-      ckpt_path: '/home/simone.sarrocco/thesis/project/models/diffusion_model/BBDM/checkpoints/vqgan-epoch=19-val_rec_loss=0.00.ckpt'
+      ckpt_path: '/home/simone.sarrocco/thesis/project/models/diffusion_model/BBDM/checkpoints/vqgan-epoch=99-val_rec_loss=0.00.ckpt'
       embed_dim: 32
       n_embed: 256
       ddconfig:
