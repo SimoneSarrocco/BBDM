@@ -101,7 +101,7 @@ class VQModel(pl.LightningModule):
         return x.float()
 
     def training_step(self, batch, batch_idx, optimizer_idx):
-        x = self.get_input(batch, self.image_key)
+        x = self.get_input(batch)
         xrec, qloss = self(x)
 
         if optimizer_idx == 0:

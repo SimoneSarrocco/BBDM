@@ -34,7 +34,7 @@ data:
 model:
   model_name: "LBBDM-f16-4th" # part of result path
   model_type: "LBBDM" # specify a module
-  latent_before_quant_conv: True
+  latent_before_quant_conv: False
   normalize_latent: False
   only_load_latent_mean_std: False
   # model_load_path:  # model checkpoint path
