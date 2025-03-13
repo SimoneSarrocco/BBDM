@@ -710,6 +710,7 @@ if __name__ == "__main__":
     val = np.load('/home/simone.sarrocco/thesis/project/data/val_set_patient_split.npz')['images']
     test = np.load('/home/simone.sarrocco/thesis/project/data/test_set_patient_split.npz')['images']
 
+    """
     train_pseudoart100_images = []
     val_pseudoart100_images = []
     test_pseudoart100_images = []
@@ -736,6 +737,18 @@ if __name__ == "__main__":
     val_data = OCTDataset(val_pseudoart100_images)
     val_loader = DataLoader(val_data, batch_size=1, shuffle=False, num_workers=0)
     print(f'Shape of validation set: {val_pseudoart100_images.shape}')
+    """
+    train_data_split = torch.tensor(train).view((-1, 1, 496, 768))  # Pass shape as a tuple
+    val_data_split = torch.tensor(val).view((-1, 1, 496, 768))  # Pass shape as a tuple
+    test_data_split = torch.tensor(test).view((-1, 1, 496, 768))  # Pass shape as a tuple
+
+    train_data = OCTDataset(train_data_split)
+    train_loader = DataLoader(train_data, batch_size=1, shuffle=True, num_workers=0)
+    print(f'Shape of training set: {train_data_split.shape}')
+
+    val_data = OCTDataset(val_data_split)
+    val_loader = DataLoader(val_data, batch_size=1, shuffle=False, num_workers=0)
+    print(f'Shape of validation set: {val_data_split.shape}')
 
     lossconfig = {
         "target": "vqperceptual.VQLPIPSWithDiscriminator",  # Adjust module path as needed.
