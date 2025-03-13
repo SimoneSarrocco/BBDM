@@ -742,7 +742,7 @@ if __name__ == "__main__":
     val_data_split = torch.tensor(val).view((-1, 1, 496, 768))  # Pass shape as a tuple
     test_data_split = torch.tensor(test).view((-1, 1, 496, 768))  # Pass shape as a tuple
 
-    train_data = OCTDataset(train_data_split)
+    train_data = OCTDataset(train_data_split, transform=True)
     train_loader = DataLoader(train_data, batch_size=1, shuffle=True, num_workers=0)
     print(f'Shape of training set: {train_data_split.shape}')
 
