@@ -1,7 +1,6 @@
 import os
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from types import SimpleNamespace
 import pdb
 import torch
 import torch.nn.functional as F
@@ -16,6 +15,8 @@ from dataset import OCTDataset
 from torch.utils.data import DataLoader
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
+from torch.utils.tensorboard import SummaryWriter
+from pytorch_lightning import loggers as pl_loggers
 
 
 def mean_flat(tensor):
@@ -50,7 +51,8 @@ class VQModel(pl.LightningModule):
                  lossconfig,
                  n_embed,
                  embed_dim,
-                 lr,
+                 lr_ae,
+                 lr_disc,
                  ckpt_path=None,
                  ignore_keys=[],
                  image_key="image",
@@ -69,7 +71,8 @@ class VQModel(pl.LightningModule):
                                         remap=remap, sane_index_shape=sane_index_shape)
         self.quant_conv = torch.nn.Conv2d(ddconfig.z_channels, embed_dim, 1)
         self.post_quant_conv = torch.nn.Conv2d(embed_dim, ddconfig.z_channels, 1)
-        self.learning_rate = lr
+        self.learning_rate_autoencoder = lr_ae
+        self.learning_rate_discriminator = lr_disc
         if ckpt_path is not None:
             self.init_from_ckpt(ckpt_path, ignore_keys=ignore_keys)
         self.image_key = image_key
@@ -124,41 +127,49 @@ class VQModel(pl.LightningModule):
         return x.float()
 
     def training_step(self, batch, batch_idx):
-        # self.trainer.training = True
         self.automatic_optimization = False  # Enable manual optimization
-        # opt_ae, opt_disc = self.optimizers()
-
+        opt_ae, opt_disc = self.configure_optimizers()
         x = self.get_input(batch)
         xrec, qloss = self(x)
 
-        """
-        if optimizer_idx == 0:
-            # autoencode
-            aeloss, log_dict_ae = self.loss(qloss, x, xrec, optimizer_idx, self.global_step,
-                                            last_layer=self.get_last_layer(), split="train")
+        # self.toggle_optimizer(opt_ae)
+        opt_ae.zero_grad()
+        # autoencode
+        aeloss, log_dict_ae = self.loss(qloss, x, xrec, 0, self.global_step,
+                                        last_layer=self.get_last_layer(), split="train")
 
-            self.log("train/aeloss", aeloss, prog_bar=True, logger=True, on_step=True, on_epoch=True)
-            self.log_dict(log_dict_ae, prog_bar=False, logger=True, on_step=True, on_epoch=True)
-            return aeloss
+        # self.log("train/aeloss", aeloss, prog_bar=True, logger=True, on_step=True, on_epoch=True)
 
-        if optimizer_idx == 1:
-            # discriminator
-            discloss, log_dict_disc = self.loss(qloss, x, xrec, optimizer_idx, self.global_step,
+        # self.log_dict(log_dict_ae, prog_bar=False, logger=True, on_step=True, on_epoch=True)
+        aeloss.backward()
+        opt_ae.step()
+        # self.untoggle_optimizer(opt_ae)
+        # return aeloss
+
+        # self.toggle_optimizer(opt_disc)
+        opt_disc.zero_grad()
+        # discriminator
+        discloss, log_dict_disc = self.loss(qloss, x, xrec, 1, self.global_step,
                                             last_layer=self.get_last_layer(), split="train")
-            self.log("train/discloss", discloss, prog_bar=True, logger=True, on_step=True, on_epoch=True)
-            self.log_dict(log_dict_disc, prog_bar=False, logger=True, on_step=True, on_epoch=True)
-            return discloss
-        """
+        # self.log("train/discloss", discloss, prog_bar=True, logger=True, on_step=True, on_epoch=True)
+        # self.log_dict(log_dict_disc, prog_bar=False, logger=True, on_step=True, on_epoch=True)
+        # self.manual_backward(discloss)
+        discloss.backward()
+        opt_disc.step()
+        # self.untoggle_optimizer(opt_disc)
+        # return discloss
+
         # ------------------
         # Autoencoder Step
         # ------------------
         # self.toggle_optimizer(opt_ae)
 
+        """
         aeloss, log_dict_ae = self.loss(
             qloss, x, xrec, 0, self.global_step,
             last_layer=self.get_last_layer(), split="train"
         )
-
+        """
         # self.log_dict(log_dict_ae, prog_bar=False, on_step=True, on_epoch=True)
 
         # opt_ae.zero_grad()
@@ -175,11 +186,12 @@ class VQModel(pl.LightningModule):
         # ------------------
         # self.toggle_optimizer(opt_disc)
 
+        """
         discloss, log_dict_disc = self.loss(
             qloss, x, xrec, 1, self.global_step,
             last_layer=self.get_last_layer(), split="train"
         )
-
+        """
         # self.log_dict(log_dict_disc, prog_bar=False, on_step=True, on_epoch=True)
 
         # opt_disc.zero_grad()
@@ -267,6 +279,8 @@ class VQModel(pl.LightningModule):
         # return self.log_dict
         # return {"val/rec_loss", rec_loss}
         return {
+            "x": x,
+            "xrec": xrec,
             "val/rec_loss": log_dict_ae.get("val/rec_loss", torch.tensor(0.0, device=self.device)),
             "val/aeloss": aeloss,
             "val/discloss": discloss,
@@ -279,16 +293,15 @@ class VQModel(pl.LightningModule):
         }
 
     def configure_optimizers(self):
-        lr = self.learning_rate
         opt_ae = torch.optim.Adam(list(self.encoder.parameters())+
                                   list(self.decoder.parameters())+
                                   list(self.quantize.parameters())+
                                   list(self.quant_conv.parameters())+
                                   list(self.post_quant_conv.parameters()),
-                                  lr=lr, betas=(0.5, 0.9))
+                                  lr=self.learning_rate_autoencoder, betas=(0.9, 0.999))
         opt_disc = torch.optim.Adam(self.loss.discriminator.parameters(),
-                                    lr=lr, betas=(0.5, 0.9))
-        return [opt_ae, opt_disc], []
+                                    lr=self.learning_rate_discriminator, betas=(0.9, 0.999))
+        return [opt_ae, opt_disc]
 
     def get_last_layer(self):
         return self.decoder.conv_out.weight
@@ -526,37 +539,53 @@ class GumbelVQ(VQModel):
 # --- Lightning Module for Training ---
 # We wrap the VQModel in a LightningModule for training convenience.
 class LitVQGAN(pl.LightningModule):
-    def __init__(self, ddconfig, lossconfig, n_embed, embed_dim, lr=1e-4, ckpt_path=None, ignore_keys=[]):
+    def __init__(self, ddconfig, lossconfig, n_embed, embed_dim, lr_ae=1e-4, lr_disc=5e-4, ckpt_path=None, ignore_keys=[]):
         super().__init__()
         # self.learning_rate = lr
         self.model = VQModel(ddconfig=ddconfig,
                              lossconfig=lossconfig,
                              n_embed=n_embed,
                              embed_dim=embed_dim,
-                             lr=lr,
+                             lr_ae=lr_ae,
+                             lr_disc=lr_disc,
                              ckpt_path=ckpt_path,
                              ignore_keys=ignore_keys,
                              )
         self.automatic_optimization = False  # Enable manual optimization
+
     def forward(self, x):
         return self.model(x)
 
     def training_step(self, batch, batch_idx):
         # Get optimizers
-        opt_ae, opt_disc = self.optimizers()
-
+        # opt_ae, opt_disc = self.optimizers()
+        tensorboard = self.logger.experiment
         # Get model outputs without optimization
         outputs = self.model.training_step(batch, batch_idx)
+        # self.model.training_step(batch, batch_idx, optimizer_idx)
 
         # Extract values
         aeloss = outputs["aeloss"]
         discloss = outputs["discloss"]
         log_dict_ae = outputs["log_dict_ae"]
         log_dict_disc = outputs["log_dict_disc"]
-
+        input_image = outputs["x"]
+        reconstruction = outputs["xrec"]
+        print(f'Input shape: {input_image.shape}')
+        print(f'Reconstruction shape: {reconstruction.shape}')
+        print(f'Input range: {torch.min(input_image)},{torch.max(input_image)}')
+        print(f'Reconstruction range: {torch.min(reconstruction)},{torch.max(reconstruction)}')
+        reconstruction = (reconstruction - torch.min(reconstruction)) / (
+                    torch.max(reconstruction) - torch.min(reconstruction))
+        if batch_idx % 10 == 0:
+            # self.writer.add_image(f'Training/Input_{batch_idx}', x.squeeze(0), self.global_step)
+            tensorboard.add_image(f'Training/Input_{batch_idx}', input_image.squeeze(0), self.global_step)
+            tensorboard.add_image(f'Training/Reconstruction_{batch_idx}', reconstruction.squeeze(0).clamp(0., 1.), self.global_step)
+            # self.writer.add_image(f'Training/Reconstruction_{batch_idx}', xrec.squeeze(0), self.global_step)
         # ------------------
         # Autoencoder Step
         # ------------------
+        """
         self.toggle_optimizer(opt_ae)
 
         opt_ae.zero_grad()
@@ -575,7 +604,7 @@ class LitVQGAN(pl.LightningModule):
         opt_disc.step()
 
         self.untoggle_optimizer(opt_disc)
-
+        """
         # Logging (now handled by LitVQGAN)
         self.log("train/aeloss", aeloss, prog_bar=True, on_step=True, on_epoch=True)
         self.log("train/discloss", discloss, prog_bar=True, on_step=True, on_epoch=True)
@@ -584,6 +613,27 @@ class LitVQGAN(pl.LightningModule):
         self.log_dict(log_dict_ae, prog_bar=False, on_step=True, on_epoch=True)
         self.log_dict(log_dict_disc, prog_bar=False, on_step=True, on_epoch=True)
 
+        """
+        # Get input and run forward pass
+        x = self.model.get_input(batch)
+        xrec, qloss = self.model(x)
+
+        if optimizer_idx == 0:
+            # Autoencoder step
+            aeloss, log_dict_ae = self.model.loss(qloss, x, xrec, optimizer_idx, self.global_step,
+                                                  last_layer=self.model.get_last_layer(), split="train")
+            self.log("train/aeloss", aeloss, prog_bar=True, on_step=True, on_epoch=True)
+            self.log_dict(log_dict_ae, prog_bar=False, on_step=True, on_epoch=True)
+            return aeloss
+
+        elif optimizer_idx == 1:
+            # Discriminator step
+            discloss, log_dict_disc = self.model.loss(qloss, x, xrec, optimizer_idx, self.global_step,
+                                                      last_layer=self.model.get_last_layer(), split="train")
+            self.log("train/discloss", discloss, prog_bar=True, on_step=True, on_epoch=True)
+            self.log_dict(log_dict_disc, prog_bar=False, on_step=True, on_epoch=True)
+            return discloss
+        """
         # return self.model.training_step(batch, batch_idx)
         return {"train/aeloss": aeloss, "train/discloss": discloss}
 
@@ -617,6 +667,18 @@ class LitVQGAN(pl.LightningModule):
 
         # Log rec_loss separately to avoid conflicts
         self.log("val/rec_loss", outputs["val/rec_loss"], prog_bar=True, on_step=False, on_epoch=True, sync_dist=True)
+        tensorboard = self.logger.experiment
+        input_image = outputs["x"]
+        reconstruction = outputs["xrec"]
+        print(f'Input val shape: {input_image.shape}')
+        print(f'Reconstruction val shape: {reconstruction.shape}')
+        print(f'Input val range: {torch.min(input_image)},{torch.max(input_image)}')
+        print(f'Reconstruction val range: {torch.min(reconstruction)},{torch.max(reconstruction)}')
+        # reconstruction = (reconstruction - torch.min(reconstruction)) / (torch.max(reconstruction) - torch.min(reconstruction))
+        if batch_idx % 10 == 0:
+            # self.writer.add_image(f'Training/Input_{batch_idx}', x.squeeze(0), self.global_step)
+            tensorboard.add_image(f'Validation/Input_{batch_idx}', input_image.squeeze(0).clamp(0., 1.), self.global_step)
+            tensorboard.add_image(f'Validation/Reconstruction_{batch_idx}', reconstruction.squeeze(0).clamp(0., 1.), self.global_step)
 
         return outputs["val/rec_loss"]  # Return the primary validation metric
         # return self.model.validation_step(batch, batch_idx)
@@ -627,15 +689,14 @@ class LitVQGAN(pl.LightningModule):
 
 # --- Dummy Configuration Classes ---
 # These dummy classes mimic the YAML configuration used in BBDM.
-# Adjust z_channels if needed. Here we set z_channels to 32 to match our architecture.
 class DummyDDConfig:
     def __init__(self):
         self.double_z = False
-        self.z_channels = 32      # Make sure this matches your encoder output
+        self.z_channels = 8      # Make sure this matches your encoder output
         self.resolution = 512
         self.in_channels = 1
         self.out_ch = 1
-        self.ch = 64
+        self.ch = 128
         self.ch_mult = (1, 2, 4, 8)
         self.num_res_blocks = 2
         self.attn_resolutions = [16]
@@ -668,42 +729,45 @@ if __name__ == "__main__":
         test_pseudoart100_images.append(image)
     test_pseudoart100_images = torch.stack(test_pseudoart100_images, 0)
 
-    train_data = OCTDataset(train_pseudoart100_images)
-    train_loader = DataLoader(train_data, batch_size=1, shuffle=False, num_workers=63)
+    train_data = OCTDataset(train_pseudoart100_images, transform=True)
+    train_loader = DataLoader(train_data, batch_size=1, shuffle=True, num_workers=0)
     print(f'Shape of training set: {train_pseudoart100_images.shape}')
 
     val_data = OCTDataset(val_pseudoart100_images)
-    val_loader = DataLoader(val_data, batch_size=1, shuffle=False, num_workers=63)
+    val_loader = DataLoader(val_data, batch_size=1, shuffle=False, num_workers=0)
     print(f'Shape of validation set: {val_pseudoart100_images.shape}')
 
     lossconfig = {
         "target": "vqperceptual.VQLPIPSWithDiscriminator",  # Adjust module path as needed.
         "params": {
-            "disc_start": 10000,  # Step at which discriminator loss begins to be applied.
+            "disc_start": 0,  # Step at which discriminator loss begins to be applied.
             "codebook_weight": 1.0,
             "pixelloss_weight": 1.0,
             "disc_num_layers": 3,
             "disc_in_channels": 1,  # For grayscale OCT images; if RGB, use 3.
             "disc_factor": 1.0,
             "disc_weight": 1.0,
-            "perceptual_weight": 1.0,
+            "perceptual_weight": 0.001,
             "use_actnorm": False,
             "disc_conditional": False,
             "disc_ndf": 64,
-            "disc_loss": "hinge"
+            "disc_loss": "vanilla"
         }
     }
 
+    # writer = SummaryWriter(log_dir='/home/simone.sarrocco/thesis/project/models/diffusion_model/BBDM/lightning_logs')
     # lossconfig_ns = SimpleNamespace(**lossconfig)
+    tb_logger = pl_loggers.TensorBoardLogger(save_dir='logs/')
 
     # --- Instantiate the Lightning Module ---
     lit_model = LitVQGAN(
         ddconfig=ddconfig,
         lossconfig=lossconfig,
-        n_embed=256,
-        embed_dim=32,
-        lr=1e-4,
-        ckpt_path=None
+        n_embed=16384,
+        embed_dim=8,
+        lr_ae=1e-4,
+        lr_disc=5e-4,
+        ckpt_path=None,
     )
 
     # --- Set Up Checkpointing ---
@@ -713,7 +777,7 @@ if __name__ == "__main__":
         filename="vqgan-{epoch:02d}-{val_rec_loss:.2f}",
         save_top_k=1,
         mode="min",
-        every_n_epochs=10  # Save every 10 epochs
+        every_n_epochs=1  # Save every 10 epochs
     )
 
     # --- Initialize Trainer and Start Training ---
@@ -721,9 +785,11 @@ if __name__ == "__main__":
         accelerator='gpu',
         devices=1,
         max_epochs=100,
-        callbacks=[TQDMProgressBar(), checkpoint_callback],
+        # callbacks=[TQDMProgressBar(), checkpoint_callback],
+        callbacks=[checkpoint_callback],
+        logger=tb_logger,
         # progress_bar_refresh_rate=20,
-
+        # strategy='ddp_find_unused_parameters_true',  # multi-optimizer support
     )
     print("🔥 Trainer is starting training!")
     trainer.fit(lit_model, train_loader, val_loader)
