@@ -120,8 +120,8 @@ class VQModel(pl.LightningModule):
 
     def get_input(self, batch):
         x = batch
-        if len(x.shape) == 3:
-            x = x[..., None]
+        # if len(x.shape) == 3:
+        #    x = x[..., None]
         # x = x.permute(0, 3, 1, 2).to(memory_format=torch.contiguous_format)
         x = x.to(memory_format=torch.contiguous_format)
         return x.float()
@@ -571,16 +571,16 @@ class LitVQGAN(pl.LightningModule):
         log_dict_disc = outputs["log_dict_disc"]
         input_image = outputs["x"]
         reconstruction = outputs["xrec"]
-        print(f'Input shape: {input_image.shape}')
-        print(f'Reconstruction shape: {reconstruction.shape}')
-        print(f'Input range: {torch.min(input_image)},{torch.max(input_image)}')
-        print(f'Reconstruction range: {torch.min(reconstruction)},{torch.max(reconstruction)}')
-        reconstruction = (reconstruction - torch.min(reconstruction)) / (
-                    torch.max(reconstruction) - torch.min(reconstruction))
+        # print(f'Input shape: {input_image.shape}')
+        # print(f'Reconstruction shape: {reconstruction.shape}')
+        # print(f'Input range: {torch.min(input_image)},{torch.max(input_image)}')
+        # print(f'Reconstruction range: {torch.min(reconstruction)},{torch.max(reconstruction)}')
+        # reconstruction = (reconstruction - torch.min(reconstruction)) / (
+        #            torch.max(reconstruction) - torch.min(reconstruction))
         if batch_idx % 10 == 0:
             # self.writer.add_image(f'Training/Input_{batch_idx}', x.squeeze(0), self.global_step)
-            tensorboard.add_image(f'Training/Input_{batch_idx}', input_image.squeeze(0), self.global_step)
-            tensorboard.add_image(f'Training/Reconstruction_{batch_idx}', reconstruction.squeeze(0).clamp(0., 1.), self.global_step)
+            tensorboard.add_image(f'Training/Input_{batch_idx}', input_image[:, :, 8:-8, :].squeeze(0), self.global_step)
+            tensorboard.add_image(f'Training/Reconstruction_{batch_idx}', reconstruction[:, :, 8:-8, :].squeeze(0).clamp(0., 1.), self.global_step)
             # self.writer.add_image(f'Training/Reconstruction_{batch_idx}', xrec.squeeze(0), self.global_step)
         # ------------------
         # Autoencoder Step
@@ -670,15 +670,15 @@ class LitVQGAN(pl.LightningModule):
         tensorboard = self.logger.experiment
         input_image = outputs["x"]
         reconstruction = outputs["xrec"]
-        print(f'Input val shape: {input_image.shape}')
-        print(f'Reconstruction val shape: {reconstruction.shape}')
-        print(f'Input val range: {torch.min(input_image)},{torch.max(input_image)}')
-        print(f'Reconstruction val range: {torch.min(reconstruction)},{torch.max(reconstruction)}')
+        # print(f'Input val shape: {input_image.shape}')
+        # print(f'Reconstruction val shape: {reconstruction.shape}')
+        # print(f'Input val range: {torch.min(input_image)},{torch.max(input_image)}')
+        # print(f'Reconstruction val range: {torch.min(reconstruction)},{torch.max(reconstruction)}')
         # reconstruction = (reconstruction - torch.min(reconstruction)) / (torch.max(reconstruction) - torch.min(reconstruction))
         if batch_idx % 10 == 0:
             # self.writer.add_image(f'Training/Input_{batch_idx}', x.squeeze(0), self.global_step)
-            tensorboard.add_image(f'Validation/Input_{batch_idx}', input_image.squeeze(0).clamp(0., 1.), self.global_step)
-            tensorboard.add_image(f'Validation/Reconstruction_{batch_idx}', reconstruction.squeeze(0).clamp(0., 1.), self.global_step)
+            tensorboard.add_image(f'Validation/Input_{batch_idx}', input_image[:, :, 8:-8, :].squeeze(0).clamp(0., 1.), self.global_step)
+            tensorboard.add_image(f'Validation/Reconstruction_{batch_idx}', reconstruction[:, :, 8:-8, :].squeeze(0).clamp(0., 1.), self.global_step)
 
         return outputs["val/rec_loss"]  # Return the primary validation metric
         # return self.model.validation_step(batch, batch_idx)
@@ -697,7 +697,7 @@ class DummyDDConfig:
         self.in_channels = 1
         self.out_ch = 1
         self.ch = 128
-        self.ch_mult = (1, 2, 4, 8)
+        self.ch_mult = (1, 1, 2, 2, 4)
         self.num_res_blocks = 2
         self.attn_resolutions = [16]
         self.dropout = 0.0
@@ -743,11 +743,11 @@ if __name__ == "__main__":
     test_data_split = torch.tensor(test).view((-1, 1, 496, 768))  # Pass shape as a tuple
 
     train_data = OCTDataset(train_data_split, transform=True)
-    train_loader = DataLoader(train_data, batch_size=1, shuffle=True, num_workers=0)
+    train_loader = DataLoader(train_data, batch_size=1, shuffle=True, num_workers=63)
     print(f'Shape of training set: {train_data_split.shape}')
 
     val_data = OCTDataset(val_data_split)
-    val_loader = DataLoader(val_data, batch_size=1, shuffle=False, num_workers=0)
+    val_loader = DataLoader(val_data, batch_size=1, shuffle=False, num_workers=63)
     print(f'Shape of validation set: {val_data_split.shape}')
 
     lossconfig = {
@@ -790,7 +790,7 @@ if __name__ == "__main__":
         filename="vqgan-{epoch:02d}-{val_rec_loss:.2f}",
         save_top_k=1,
         mode="min",
-        every_n_epochs=1  # Save every 10 epochs
+        every_n_epochs=10  # Save every 10 epochs
     )
 
     # --- Initialize Trainer and Start Training ---
