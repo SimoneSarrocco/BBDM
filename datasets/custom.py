@@ -9,6 +9,7 @@ from datasets.utils import get_image_paths_from_dir
 from PIL import Image
 import cv2
 import os
+import numpy as np
 
 
 @Registers.datasets.register_with_name('custom_single')
@@ -34,13 +35,35 @@ class CustomAlignedDataset(Dataset):
     def __init__(self, dataset_config, stage='train'):
         super().__init__()
         self.image_size = (dataset_config.image_size, 768)
-        image_paths_ori = get_image_paths_from_dir(os.path.join(dataset_config.dataset_path, f'{stage}/B'))
-        image_paths_cond = get_image_paths_from_dir(os.path.join(dataset_config.dataset_path, f'{stage}/A'))
-        self.flip = dataset_config.flip if stage == 'train' else False
-        self.to_normal = dataset_config.to_normal
+        # image_paths_ori = get_image_paths_from_dir(os.path.join(dataset_config.dataset_path, f'{stage}/B'))
+        # image_paths_cond = get_image_paths_from_dir(os.path.join(dataset_config.dataset_path, f'{stage}/A'))
+        if stage == 'train':
+            data = np.load('/home/simone.sarrocco/thesis/project/data/train_set_patient_split.npz')['images']
+        elif stage == 'val':
+            data = np.load('/home/simone.sarrocco/thesis/project/data/val_set_patient_split.npz')['images']
+        elif stage == 'test':
+            data = np.load('/home/simone.sarrocco/thesis/project/data/test_set_patient_split.npz')['images']
 
-        self.imgs_ori = ImagePathDataset(image_paths_ori, self.image_size, flip=self.flip, to_normal=self.to_normal)
-        self.imgs_cond = ImagePathDataset(image_paths_cond, self.image_size, flip=self.flip, to_normal=self.to_normal)
+        art10_images = []
+        pseudoart100_images = []
+
+        for i in range(len(data)):
+            art10 = torch.tensor(data[i, :1, ...])
+            pseudoart100 = torch.tensor(data[i, -1:, ...])
+            art10_images.append(art10)
+            pseudoart100_images.append(pseudoart100)
+        art10_images = torch.stack(art10_images, 0)
+        pseudoart100_images = torch.stack(pseudoart100_images, 0)
+
+        self.transform = dataset_config.transform if stage == 'train' else False
+        self.to_normal = dataset_config.to_normal
+        self.resize = dataset_config.resize
+        self.gaussian_noise = dataset_config.gaussian_noise
+        self.blur = dataset_config.blur
+        self.clip = dataset_config.clip
+
+        self.imgs_ori = ImagePathDataset(art10_images, transform=self.transform, to_normal=self.to_normal, clip=self.clip, gaussian_noise=self.gaussian_noise, resize=self.resize)
+        self.imgs_cond = ImagePathDataset(pseudoart100_images, transform=self.transform, to_normal=self.to_normal, clip=self.clip, gaussian_noise=self.gaussian_noise, resize=self.resize)
 
     def __len__(self):
         return len(self.imgs_ori)
