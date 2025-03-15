@@ -97,7 +97,8 @@ class BBDMRunner(DiffusionBaseRunner):
         max_batch_num = 30000 // self.config.data.train.batch_size
 
         def calc_mean(batch, total_ori_mean=None, total_cond_mean=None):
-            (x, x_name), (x_cond, x_cond_name) = batch
+            # (x, x_name), (x_cond, x_cond_name) = batch
+            x,x_cond = batch
             x = x.to(self.config.training.device[0])
             x_cond = x_cond.to(self.config.training.device[0])
 
@@ -111,7 +112,8 @@ class BBDMRunner(DiffusionBaseRunner):
             return total_ori_mean, total_cond_mean
 
         def calc_var(batch, ori_latent_mean=None, cond_latent_mean=None, total_ori_var=None, total_cond_var=None):
-            (x, x_name), (x_cond, x_cond_name) = batch
+            # (x, x_name), (x_cond, x_cond_name) = batch
+            x, x_cond = batch
             x = x.to(self.config.training.device[0])
             x_cond = x_cond.to(self.config.training.device[0])
 
@@ -162,7 +164,8 @@ class BBDMRunner(DiffusionBaseRunner):
         self.logger(self.net.cond_latent_std)
 
     def loss_fn(self, net, batch, epoch, step, opt_idx=0, stage='train', write=True):
-        (x, x_name), (x_cond, x_cond_name) = batch
+        # (x, x_name), (x_cond, x_cond_name) = batch
+        x, x_cond = batch
         x = x.to(self.config.training.device[0])
         x_cond = x_cond.to(self.config.training.device[0])
 
@@ -183,7 +186,8 @@ class BBDMRunner(DiffusionBaseRunner):
 
         print(sample_path)
 
-        (x, x_name), (x_cond, x_cond_name) = batch
+        # (x, x_name), (x_cond, x_cond_name) = batch
+        x, x_cond = batch
 
         batch_size = x.shape[0] if x.shape[0] < 4 else 4
 
@@ -232,7 +236,8 @@ class BBDMRunner(DiffusionBaseRunner):
         to_normal = self.config.data.dataset_config.to_normal
         sample_num = self.config.testing.sample_num
         for test_batch in pbar:
-            (x, x_name), (x_cond, x_cond_name) = test_batch
+            # (x, x_name), (x_cond, x_cond_name) = test_batch
+            x, x_cond = test_batch
             x = x.to(self.config.training.device[0])
             x_cond = x_cond.to(self.config.training.device[0])
 
@@ -244,10 +249,10 @@ class BBDMRunner(DiffusionBaseRunner):
                     gt = x[i]
                     result = sample[i]
                     if j == 0:
-                        save_single_image(condition, condition_path, f'{x_cond_name[i]}.png', to_normal=to_normal)
-                        save_single_image(gt, gt_path, f'{x_name[i]}.png', to_normal=to_normal)
+                        save_single_image(condition, condition_path, f'x_cond_{i}.png', to_normal=to_normal)
+                        save_single_image(gt, gt_path, f'x_{i}.png', to_normal=to_normal)
                     if sample_num > 1:
-                        result_path_i = make_dir(os.path.join(result_path, x_name[i]))
+                        result_path_i = make_dir(os.path.join(result_path, f'x_{i}'))
                         save_single_image(result, result_path_i, f'output_{j}.png', to_normal=to_normal)
                     else:
-                        save_single_image(result, result_path, f'{x_name[i]}.png', to_normal=to_normal)
+                        save_single_image(result, result_path, f'x_{i}.png', to_normal=to_normal)

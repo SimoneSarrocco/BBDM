@@ -20,7 +20,11 @@ data:
     image_size: 496
     channels: 1
     to_normal: False
-    flip: True
+    transform: True
+    resize: False
+    gaussian_noise: False
+    clip: False
+    blur: False
   train:
     batch_size: 1
     shuffle: True
@@ -35,7 +39,7 @@ model:
   model_name: "LBBDM-f4-1st" # part of result path
   model_type: "LBBDM" # specify a module
   latent_before_quant_conv: False
-  normalize_latent: False
+  normalize_latent: True
   only_load_latent_mean_std: False
   # model_load_path:  # model checkpoint path
   # optim_sche_load_path:  # optimizer scheduler checkpoint path
@@ -53,7 +57,7 @@ model:
 
   VQGAN:
     params:
-      ckpt_path: '/home/simone.sarrocco/thesis/project/models/diffusion_model/GenerativeModels/tutorials/generative/2d_vqgan/all_images_3rd/checkpoints/vqgan_epoch_20.ckpt'
+      ckpt_path: '/home/simone.sarrocco/thesis/project/models/diffusion_model/GenerativeModels/tutorials/generative/2d_vqgan/all_images_4th/checkpoints/vqgan_epoch_10.ckpt'
       embed_dim: 32
       n_embed: 256
       ddconfig:
@@ -62,8 +66,9 @@ model:
         resolution: 512
         in_channels: 1
         out_ch: 1
-        ch: 128
+        ch: 64
         ch_mult: !!python/tuple
+          - 1
           - 2
           - 4
         num_res_blocks: 2
