@@ -62,8 +62,8 @@ class CustomAlignedDataset(Dataset):
         self.blur = dataset_config.blur
         self.clip = dataset_config.clip
 
-        self.imgs_ori = ImagePathDataset(art10_images, transform=self.transform, to_normal=self.to_normal, clip=self.clip, gaussian_noise=self.gaussian_noise, resize=self.resize)
-        self.imgs_cond = ImagePathDataset(pseudoart100_images, transform=self.transform, to_normal=self.to_normal, clip=self.clip, gaussian_noise=self.gaussian_noise, resize=self.resize)
+        self.imgs_ori = ImagePathDataset(pseudoart100_images, transform=self.transform, to_normal=self.to_normal, clip=self.clip, gaussian_noise=self.gaussian_noise, resize=self.resize)
+        self.imgs_cond = ImagePathDataset(art10_images, transform=self.transform, to_normal=self.to_normal, clip=self.clip, gaussian_noise=self.gaussian_noise, resize=self.resize)
 
     def __len__(self):
         return len(self.imgs_ori)
