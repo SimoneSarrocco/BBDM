@@ -7,7 +7,8 @@ from tqdm.autonotebook import tqdm
 
 from model.BrownianBridge.BrownianBridgeModel import BrownianBridgeModel
 from model.BrownianBridge.base.modules.encoders.modules import SpatialRescaler
-from model.VQGAN.vqgan import VQModel
+# from model.VQGAN.vqgan import VQModel
+from model.VQGAN.vqvae import VQVAE
 
 
 def disabled_train(self, mode=True):
@@ -20,7 +21,17 @@ class LatentBrownianBridgeModel(BrownianBridgeModel):
     def __init__(self, model_config):
         super().__init__(model_config)
 
-        self.vqgan = VQModel(**vars(model_config.VQGAN.params)).eval()
+        # self.vqgan = VQGAN(**vars(model_config.VQGAN.params)).eval()
+        self.vqgan = VQVAE(spatial_dims=2,
+                           in_channels=1,
+                           out_channels=1,
+                           num_channels=(128, 256, 256, 512),
+                           num_res_channels=(128, 256, 256, 512),
+                           num_res_layers=2,
+                           downsample_parameters=((2, 4, 1, 1), (2, 4, 1, 1), (2, 4, 1, 1), (2, 4, 1, 1)),
+                           upsample_parameters=((2, 4, 1, 1, 0), (2, 4, 1, 1, 0), (2, 4, 1, 1, 0), (2, 4, 1, 1, 0)),
+                           num_embeddings=16384,
+                           embedding_dim=4).eval()
         self.vqgan.train = disabled_train
         for param in self.vqgan.parameters():
             param.requires_grad = False
@@ -76,7 +87,8 @@ class LatentBrownianBridgeModel(BrownianBridgeModel):
         model = self.vqgan
         x_latent = model.encoder(x)
         if not self.model_config.latent_before_quant_conv:
-            x_latent = model.quant_conv(x_latent)
+            # x_latent = model.quant_conv(x_latent)
+            x_latent, _ = model.quantize(x_latent)
         if normalize:
             if cond:
                 x_latent = (x_latent - self.cond_latent_mean) / self.cond_latent_std
@@ -96,6 +108,7 @@ class LatentBrownianBridgeModel(BrownianBridgeModel):
         if self.model_config.latent_before_quant_conv:
             x_latent = model.quant_conv(x_latent)
         x_latent_quant, loss, _ = model.quantize(x_latent)
+        # quantizations, quantization_losses = model.quantize(x_latent)
         out = model.decode(x_latent_quant)
         return out
 
