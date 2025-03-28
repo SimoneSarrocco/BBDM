@@ -53,7 +53,7 @@ model:
 
   VQGAN:
     params:
-      ckpt_path: '/home/simone.sarrocco/thesis/project/models/diffusion_model/BBDM/checkpoints/vqgan-epoch=99-val_rec_loss=0.00.ckpt'
+      ckpt_path: '/home/simone.sarrocco/thesis/project/models/diffusion_model/GenerativeModels/tutorials/generative/2d_vqgan/all_images_4th/checkpoints/vqgan_epoch_10.ckpt'
       embed_dim: 32
       n_embed: 256
       ddconfig:

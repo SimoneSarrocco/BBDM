@@ -20,7 +20,7 @@ data:
     image_size: 496
     channels: 1
     to_normal: False
-    transform: True
+    transform: False
     resize: False
     gaussian_noise: False
     clip: False
@@ -39,7 +39,7 @@ model:
   model_name: "LBBDM-f4-1st" # part of result path
   model_type: "LBBDM" # specify a module
   latent_before_quant_conv: False
-  normalize_latent: True
+  normalize_latent: False
   only_load_latent_mean_std: False
   # model_load_path:  # model checkpoint path
   # optim_sche_load_path:  # optimizer scheduler checkpoint path
@@ -106,7 +106,7 @@ model:
       max_var: 1.0 # maximum variance
 
       UNetParams:
-        image_size: 128
+        image_size: 64
         in_channels: 32
         model_channels: 128
         out_channels: 32
