@@ -25,13 +25,14 @@ class LatentBrownianBridgeModel(BrownianBridgeModel):
         self.vqgan = VQVAE(spatial_dims=2,
                            in_channels=1,
                            out_channels=1,
-                           num_channels=(128, 256, 256, 512),
-                           num_res_channels=(128, 256, 256, 512),
+                           num_channels=(128, 256, 512),
+                           num_res_channels=(128, 256, 512),
                            num_res_layers=2,
-                           downsample_parameters=((2, 4, 1, 1), (2, 4, 1, 1), (2, 4, 1, 1), (2, 4, 1, 1)),
-                           upsample_parameters=((2, 4, 1, 1, 0), (2, 4, 1, 1, 0), (2, 4, 1, 1, 0), (2, 4, 1, 1, 0)),
-                           num_embeddings=16384,
-                           embedding_dim=4).eval()
+                           downsample_parameters=((2, 4, 1, 1), (2, 4, 1, 1), (2, 4, 1, 1)),
+                           upsample_parameters=((2, 4, 1, 1, 0), (2, 4, 1, 1, 0), (2, 4, 1, 1, 0)),
+                           num_embeddings=256,
+                           embedding_dim=32).eval()
+        self.quant_conv = torch.nn.Conv2d(32, 32, 1)
         self.vqgan.train = disabled_train
         for param in self.vqgan.parameters():
             param.requires_grad = False
@@ -87,8 +88,9 @@ class LatentBrownianBridgeModel(BrownianBridgeModel):
         model = self.vqgan
         x_latent = model.encoder(x)
         if not self.model_config.latent_before_quant_conv:
-            # x_latent = model.quant_conv(x_latent)
-            x_latent, _ = model.quantize(x_latent)
+             x_latent = self.quant_conv(x_latent)
+        #    x_latent, _ = model.quantize(x_latent)
+        # x_latent, _ = model.quantize(x_latent)
         if normalize:
             if cond:
                 x_latent = (x_latent - self.cond_latent_mean) / self.cond_latent_std
@@ -106,17 +108,18 @@ class LatentBrownianBridgeModel(BrownianBridgeModel):
                 x_latent = x_latent * self.ori_latent_std + self.ori_latent_mean
         model = self.vqgan
         if self.model_config.latent_before_quant_conv:
-            x_latent = model.quant_conv(x_latent)
-        x_latent_quant, loss, _ = model.quantize(x_latent)
+            x_latent = self.quant_conv(x_latent)
+        #    x_latent = model.quantize(x_latent)
+        x_latent_quant, _ = model.quantize(x_latent)
         # quantizations, quantization_losses = model.quantize(x_latent)
         out = model.decode(x_latent_quant)
         return out
 
     @torch.no_grad()
     def sample(self, x_cond, clip_denoised=False, sample_mid_step=False):
-        x_cond_latent = self.encode(x_cond, cond=True)
+        x_cond_latent = self.encode(x_cond, cond=True)  # x_cond: ART10 --> x_cond_latent: latent encoding of ART10
         if sample_mid_step:
-            temp, one_step_temp = self.p_sample_loop(y=x_cond_latent,
+            temp, one_step_temp = self.p_sample_loop(y=x_cond_latent,  # the latent encoding of ART10 is our "y"
                                                      context=self.get_cond_stage_context(x_cond),
                                                      clip_denoised=clip_denoised,
                                                      sample_mid_step=sample_mid_step)

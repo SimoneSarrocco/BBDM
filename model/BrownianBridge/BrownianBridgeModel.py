@@ -90,7 +90,7 @@ class BrownianBridgeModel(nn.Module):
             context = None
         else:
             context = y if context is None else context
-        b, c, h, w, device, img_height, img_width = *x.shape, x.device, self.image_size, 192
+        b, c, h, w, device, img_height, img_width = *x.shape, x.device, self.image_size, 96
         assert h == img_height and w == img_width, f'height and width of image must be {img_height, img_width}, but they are {h, w}'
         t = torch.randint(0, self.num_timesteps, (b,), device=device).long()
         return self.p_losses(x, y, context, t)
@@ -176,7 +176,8 @@ class BrownianBridgeModel(nn.Module):
             objective_recon = self.denoise_fn(x_t, timesteps=t, context=context)
             x0_recon = self.predict_x0_from_objective(x_t, y, t, objective_recon=objective_recon)
             if clip_denoised:
-                x0_recon.clamp_(-1., 1.)
+                # x0_recon.clamp_(-1., 1.)
+                x0_recon.clamp_(0., 1.)  # todo
             return x0_recon, x0_recon
         else:
             t = torch.full((x_t.shape[0],), self.steps[i], device=x_t.device, dtype=torch.long)
@@ -185,7 +186,8 @@ class BrownianBridgeModel(nn.Module):
             objective_recon = self.denoise_fn(x_t, timesteps=t, context=context)
             x0_recon = self.predict_x0_from_objective(x_t, y, t, objective_recon=objective_recon)
             if clip_denoised:
-                x0_recon.clamp_(-1., 1.)
+                # x0_recon.clamp_(-1., 1.)
+                x0_recon.clamp_(0., 1.)
 
             m_t = extract(self.m_t, t, x_t.shape)
             m_nt = extract(self.m_t, n_t, x_t.shape)
