@@ -7,8 +7,8 @@ from tqdm.autonotebook import tqdm
 
 from model.BrownianBridge.BrownianBridgeModel import BrownianBridgeModel
 from model.BrownianBridge.base.modules.encoders.modules import SpatialRescaler
-# from model.VQGAN.vqgan import VQModel
-from model.VQGAN.vqvae import VQVAE
+from model.VQGAN.vqgan import VQModel
+# from model.VQGAN.vqvae import VQVAE
 
 
 def disabled_train(self, mode=True):
@@ -21,17 +21,17 @@ class LatentBrownianBridgeModel(BrownianBridgeModel):
     def __init__(self, model_config):
         super().__init__(model_config)
 
-        # self.vqgan = VQGAN(**vars(model_config.VQGAN.params)).eval()
-        self.vqgan = VQVAE(spatial_dims=2,
-                           in_channels=1,
-                           out_channels=1,
-                           num_channels=(128, 256, 512),
-                           num_res_channels=(128, 256, 512),
-                           num_res_layers=2,
-                           downsample_parameters=((2, 4, 1, 1), (2, 4, 1, 1), (2, 4, 1, 1)),
-                           upsample_parameters=((2, 4, 1, 1, 0), (2, 4, 1, 1, 0), (2, 4, 1, 1, 0)),
-                           num_embeddings=256,
-                           embedding_dim=32).eval()
+        self.vqgan = VQModel(**vars(model_config.VQGAN.params)).eval()
+        # self.vqgan = VQVAE(spatial_dims=2,
+        #                   in_channels=1,
+        #                   out_channels=1,
+        #                   num_channels=(256, 512),
+        #                   num_res_channels=512,
+        #                   num_res_layers=2,
+        #                   downsample_parameters=((2, 4, 1, 1), (2, 4, 1, 1)),
+        #                   upsample_parameters=((2, 4, 1, 1, 0), (2, 4, 1, 1, 0)),
+        #                   num_embeddings=16384,
+        #                   embedding_dim=32).eval()
         self.quant_conv = torch.nn.Conv2d(32, 32, 1)
         self.vqgan.train = disabled_train
         for param in self.vqgan.parameters():
@@ -86,17 +86,16 @@ class LatentBrownianBridgeModel(BrownianBridgeModel):
     def encode(self, x, cond=True, normalize=None):
         normalize = self.model_config.normalize_latent if normalize is None else normalize
         model = self.vqgan
-        x_latent = model.encoder(x)
+        x_latent = model.encode(x)  # the output here is a tensor with z_channels channels, so the latent space has dimension (b, c, h, w, z_channels), where h and w depends on how many downsampling blocks we choose
         if not self.model_config.latent_before_quant_conv:
-             x_latent = self.quant_conv(x_latent)
-        #    x_latent, _ = model.quantize(x_latent)
-        # x_latent, _ = model.quantize(x_latent)
+            x_latent = model.quant_conv(x_latent)  # here we apply a convolutional layer with input channels z_channels and output channels embed_dim
         if normalize:
             if cond:
                 x_latent = (x_latent - self.cond_latent_mean) / self.cond_latent_std
             else:
                 x_latent = (x_latent - self.ori_latent_mean) / self.ori_latent_std
-        return x_latent
+        return x_latent  # this is the latent representation of our original image, so we haven't already applied the vector quantization
+        # in other words, we apply the BBDM on the latent representation and not on the vector quantization
 
     @torch.no_grad()
     def decode(self, x_latent, cond=True, normalize=None):
@@ -108,10 +107,8 @@ class LatentBrownianBridgeModel(BrownianBridgeModel):
                 x_latent = x_latent * self.ori_latent_std + self.ori_latent_mean
         model = self.vqgan
         if self.model_config.latent_before_quant_conv:
-            x_latent = self.quant_conv(x_latent)
-        #    x_latent = model.quantize(x_latent)
-        x_latent_quant, _ = model.quantize(x_latent)
-        # quantizations, quantization_losses = model.quantize(x_latent)
+            x_latent = model.quant_conv(x_latent)
+        x_latent_quant, _, _ = model.quantize(x_latent)  # after the BBDM process, we quantize the latent representation and then decode it back to the pixel space through the decoder of the VQGAN
         out = model.decode(x_latent_quant)
         return out
 
