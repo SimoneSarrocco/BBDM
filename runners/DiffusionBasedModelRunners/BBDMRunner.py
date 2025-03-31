@@ -99,6 +99,7 @@ class BBDMRunner(DiffusionBaseRunner):
         def calc_mean(batch, total_ori_mean=None, total_cond_mean=None):
             # (x, x_name), (x_cond, x_cond_name) = batch
             x,x_cond = batch
+            # x, x_cond = torch.split(batch, 1, 1)  # todo
             x = x.to(self.config.training.device[0])
             x_cond = x_cond.to(self.config.training.device[0])
 
@@ -114,6 +115,7 @@ class BBDMRunner(DiffusionBaseRunner):
         def calc_var(batch, ori_latent_mean=None, cond_latent_mean=None, total_ori_var=None, total_cond_var=None):
             # (x, x_name), (x_cond, x_cond_name) = batch
             x, x_cond = batch
+            # x, x_cond = torch.split(batch, 1, 1)  # todo
             x = x.to(self.config.training.device[0])
             x_cond = x_cond.to(self.config.training.device[0])
 
@@ -166,6 +168,7 @@ class BBDMRunner(DiffusionBaseRunner):
     def loss_fn(self, net, batch, epoch, step, opt_idx=0, stage='train', write=True):
         # (x, x_name), (x_cond, x_cond_name) = batch
         x, x_cond = batch
+        # x, x_cond = torch.split(batch, 1, 1)  # todo
         x = x.to(self.config.training.device[0])
         x_cond = x_cond.to(self.config.training.device[0])
 
@@ -188,6 +191,7 @@ class BBDMRunner(DiffusionBaseRunner):
 
         # (x, x_name), (x_cond, x_cond_name) = batch
         x, x_cond = batch
+        # x, x_cond = torch.split(batch, 1, 1)  # todo
 
         batch_size = x.shape[0] if x.shape[0] < 4 else 4
 
@@ -238,6 +242,7 @@ class BBDMRunner(DiffusionBaseRunner):
         for test_batch in pbar:
             # (x, x_name), (x_cond, x_cond_name) = test_batch
             x, x_cond = test_batch
+            # x, x_cond = torch.split(batch, 1, 1)  # todo
             x = x.to(self.config.training.device[0])
             x_cond = x_cond.to(self.config.training.device[0])
 
