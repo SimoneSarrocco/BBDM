@@ -18,8 +18,9 @@ import torch.nn as nn
 from monai.networks.blocks import Convolution
 from monai.networks.layers import Act
 from monai.utils.misc import ensure_tuple_rep
-
-from model.VQGAN.vector_quantizer import EMAQuantizer, VectorQuantizer
+import numpy as np
+# from model.VQGAN.vector_quantizer import EMAQuantizer, VectorQuantizer
+from model.VQGAN.quantize import VectorQuantizer2 as VectorQuantizer
 
 __all__ = ["VQVAE"]
 
@@ -585,7 +586,7 @@ class DecoderBBDM(nn.Module):
             if i_level != 0:
                 up.upsample = Upsample(block_in, resamp_with_conv)
                 curr_res = curr_res * 2
-            self.up.insert(0, up) # prepend to get consistent order
+            self.up.insert(0, up)  # prepend to get consistent order
 
         # end
         self.norm_out = Normalize(block_in)
@@ -772,6 +773,7 @@ class VQVAE(nn.Module):
             )
         )
         """
+
         self.encoder = EncoderBBDM(
             ch=num_channels[0],
             out_ch=out_channels,
@@ -780,7 +782,7 @@ class VQVAE(nn.Module):
             attn_resolutions=[],
             in_channels=in_channels,
             resolution=512,
-            z_channels=1,
+            z_channels=embedding_dim,
             double_z=False,
         )
 
@@ -792,8 +794,19 @@ class VQVAE(nn.Module):
             attn_resolutions=[],
             in_channels=in_channels,
             resolution=512,
-            z_channels=1,
+            z_channels=embedding_dim,
         )
+
+        self.quantizer = VectorQuantizer(
+            self.num_embeddings,
+            self.embedding_dim,
+            beta=0.25,
+            remap=None,
+            sane_index_shape=False,
+        )
+
+        self.quant_conv = torch.nn.Conv2d(embedding_dim, embedding_dim, 1)
+        self.post_quant_conv = torch.nn.Conv2d(embedding_dim, embedding_dim, 1)
 
     def encode(self, images: torch.Tensor) -> torch.Tensor:
         if self.use_checkpointing:
@@ -801,14 +814,17 @@ class VQVAE(nn.Module):
         else:
             return self.encoder(images)
 
-    def quantize(self, encodings: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        x_loss, x = self.quantizer(encodings)
-        return x, x_loss
+    def quantize(self, encodings: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        # x_loss, x = self.quantizer(encodings)
+        quant, embed_loss, info = self.quantizer(encodings)
+        # return x, x_loss
+        return quant, embed_loss, info
 
     def decode(self, quantizations: torch.Tensor) -> torch.Tensor:
         if self.use_checkpointing:
             return torch.utils.checkpoint.checkpoint(self.decoder, quantizations, use_reentrant=False)
         else:
+            quantizations = self.post_quant_conv(quantizations)
             return self.decoder(quantizations)
 
     def index_quantize(self, images: torch.Tensor) -> torch.Tensor:
@@ -818,7 +834,7 @@ class VQVAE(nn.Module):
         return self.decode(self.quantizer.embed(embedding_indices))
 
     def forward(self, images: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        quantizations, quantization_losses = self.quantize(self.encode(images))
+        quantizations, quantization_losses, info = self.quantize(self.encode(images))
         reconstruction = self.decode(quantizations)
 
         return reconstruction, quantization_losses
