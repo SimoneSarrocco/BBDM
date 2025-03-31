@@ -4,7 +4,7 @@ training:
   n_epochs: 1000
   n_steps: 990000
   save_interval: 50
-  sample_interval: 2
+  sample_interval: 50
   validation_interval: 1
   accumulate_grad_batches: 1
 
@@ -20,7 +20,7 @@ data:
     image_size: 496
     channels: 1
     to_normal: False
-    transform: False
+    transform: True
     resize: False
     gaussian_noise: False
     clip: False
@@ -36,7 +36,7 @@ data:
     shuffle: False
 
 model:
-  model_name: "LBBDM-f4-1st" # part of result path
+  model_name: "LBBDM-f4-2nd" # part of result path
   model_type: "LBBDM" # specify a module
   latent_before_quant_conv: False
   normalize_latent: False
@@ -51,26 +51,25 @@ model:
     start_ema_step: 30000
 
   CondStageParams:
-    n_stages: 2
-    in_channels: 3
-    out_channels: 3
+    n_stages: 2  # this has to be equal to the number of downsampling layers, because at every stage we downsize the conditioning image by half
+    in_channels: 1  # input channels is 1 because the input image is the original conditioning image in the pixel space
+    out_channels: 32  # output channels is 32 because it has to match the latent dimension in order to then concatenate it to the latent encoding of x
 
   VQGAN:
     params:
-      ckpt_path: '/home/simone.sarrocco/thesis/project/models/diffusion_model/GenerativeModels/tutorials/generative/2d_vqgan/all_images_4th/checkpoints/vqgan_epoch_10.ckpt'
+      ckpt_path: '/home/simone.sarrocco/thesis/project/models/diffusion_model/GenerativeModels/tutorials/generative/2d_vqgan/reconstruction_new_embed_dim_32_shorter_architecture/checkpoints/vqgan_epoch_50.ckpt'
       embed_dim: 32
-      n_embed: 256
+      n_embed: 16384
       ddconfig:
         double_z: false
         z_channels: 32
         resolution: 512
         in_channels: 1
         out_ch: 1
-        ch: 64
+        ch: 256
         ch_mult: !!python/tuple
           - 1
           - 2
-          - 4
         num_res_blocks: 2
         attn_resolutions: [ ]
         dropout: 0.0
@@ -106,8 +105,8 @@ model:
       max_var: 1.0 # maximum variance
 
       UNetParams:
-        image_size: 64
-        in_channels: 32
+        image_size: 128
+        in_channels: 64
         model_channels: 128
         out_channels: 32
         num_res_blocks: 2
@@ -128,4 +127,4 @@ model:
         resblock_updown: False
         use_spatial_transformer: False
         context_dim:
-        condition_key: "nocond" # options {"SpatialRescaler", "first_stage", "nocond"}
+        condition_key: "SpatialRescaler" # options {"SpatialRescaler", "first_stage", "nocond"}
