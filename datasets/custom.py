@@ -4,7 +4,7 @@ import torch
 from torch.utils.data import Dataset
 import torchvision.transforms as transforms
 from Register import Registers
-from datasets.base import ImagePathDataset
+from datasets.base import ImagePathDataset, OCTDataset
 from datasets.utils import get_image_paths_from_dir
 from PIL import Image
 import cv2
@@ -44,9 +44,10 @@ class CustomAlignedDataset(Dataset):
         elif stage == 'test':
             data = np.load('/home/simone.sarrocco/thesis/project/data/test_set_patient_split.npz')['images']
 
-        art10_images = []
-        pseudoart100_images = []
+        # art10_images = []
+        # pseudoart100_images = []
 
+        """
         for i in range(len(data)):
             art10 = torch.tensor(data[i, :1, ...])
             pseudoart100 = torch.tensor(data[i, -1:, ...])
@@ -54,6 +55,7 @@ class CustomAlignedDataset(Dataset):
             pseudoart100_images.append(pseudoart100)
         art10_images = torch.stack(art10_images, 0)
         pseudoart100_images = torch.stack(pseudoart100_images, 0)
+        """
 
         self.transform = dataset_config.transform if stage == 'train' else False
         self.to_normal = dataset_config.to_normal
@@ -62,14 +64,16 @@ class CustomAlignedDataset(Dataset):
         self.blur = dataset_config.blur
         self.clip = dataset_config.clip
 
-        self.imgs_ori = ImagePathDataset(pseudoart100_images, transform=self.transform, to_normal=self.to_normal, clip=self.clip, gaussian_noise=self.gaussian_noise, resize=self.resize)
-        self.imgs_cond = ImagePathDataset(art10_images, transform=self.transform, to_normal=self.to_normal, clip=self.clip, gaussian_noise=self.gaussian_noise, resize=self.resize)
+        # self.imgs_ori = ImagePathDataset(pseudoart100_images, transform=self.transform, to_normal=self.to_normal, clip=self.clip, gaussian_noise=self.gaussian_noise, resize=self.resize)
+        # self.imgs_cond = ImagePathDataset(art10_images, transform=self.transform, to_normal=self.to_normal, clip=self.clip, gaussian_noise=self.gaussian_noise, resize=self.resize)
+        self.imgs = OCTDataset(data, transform=self.transform, to_normal=self.to_normal, clip=self.clip, gaussian_noise=self.gaussian_noise, resize=self.resize)
 
     def __len__(self):
-        return len(self.imgs_ori)
+        return len(self.imgs)
 
     def __getitem__(self, i):
-        return self.imgs_ori[i], self.imgs_cond[i]
+        art10, pseudoart100 = self.imgs[i]
+        return pseudoart100, art10
 
 
 @Registers.datasets.register_with_name('custom_colorization_LAB')
