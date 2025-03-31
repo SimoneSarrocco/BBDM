@@ -17,7 +17,7 @@ data:
   dataset_type: 'custom_aligned'
   dataset_config:
     dataset_path: '/home/simone.sarrocco/thesis/project/models/diffusion_model/BBDM/data'
-    image_size: 512
+    image_size: 496
     channels: 1
     to_normal: False
     flip: True
@@ -53,19 +53,19 @@ model:
 
   VQGAN:
     params:
-      ckpt_path: '/home/simone.sarrocco/thesis/project/models/diffusion_model/GenerativeModels/tutorials/generative/2d_vqgan/all_images_3rd/checkpoints/vqgan_epoch_20.ckpt'
+      ckpt_path: '/home/simone.sarrocco/thesis/project/models/diffusion_model/GenerativeModels/tutorials/generative/2d_vqgan/reconstruction_new_embed_dim_32_shorter_architecture/checkpoints/vqgan_epoch_50.ckpt'
       embed_dim: 32
-      n_embed: 256
+      n_embed: 16384
       ddconfig:
         double_z: false
         z_channels: 32
         resolution: 512
         in_channels: 1
         out_ch: 1
-        ch: 128
+        ch: 256
         ch_mult: !!python/tuple
+          - 1
           - 2
-          - 4
         num_res_blocks: 2
         attn_resolutions: []
         dropout: 0.0
