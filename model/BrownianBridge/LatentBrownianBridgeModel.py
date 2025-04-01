@@ -7,8 +7,8 @@ from tqdm.autonotebook import tqdm
 
 from model.BrownianBridge.BrownianBridgeModel import BrownianBridgeModel
 from model.BrownianBridge.base.modules.encoders.modules import SpatialRescaler
-from model.VQGAN.vqgan import VQModel
-# from model.VQGAN.vqvae import VQVAE
+# from model.VQGAN.vqgan import VQModel
+from model.VQGAN.vqvae import VQVAE
 
 
 def disabled_train(self, mode=True):
@@ -21,18 +21,20 @@ class LatentBrownianBridgeModel(BrownianBridgeModel):
     def __init__(self, model_config):
         super().__init__(model_config)
 
-        self.vqgan = VQModel(**vars(model_config.VQGAN.params)).eval()
-        # self.vqgan = VQVAE(spatial_dims=2,
-        #                   in_channels=1,
-        #                   out_channels=1,
-        #                   num_channels=(256, 512),
-        #                   num_res_channels=512,
-        #                   num_res_layers=2,
-        #                   downsample_parameters=((2, 4, 1, 1), (2, 4, 1, 1)),
-        #                   upsample_parameters=((2, 4, 1, 1, 0), (2, 4, 1, 1, 0)),
-        #                   num_embeddings=16384,
-        #                   embedding_dim=32).eval()
-        self.quant_conv = torch.nn.Conv2d(32, 32, 1)
+        # self.vqgan = VQModel(**vars(model_config.VQGAN.params)).eval()
+        self.vqgan = VQVAE(spatial_dims=2,
+                           in_channels=1,
+                           out_channels=1,
+                           num_channels=(256, 512),
+                           num_res_channels=512,
+                           num_res_layers=2,
+                           downsample_parameters=((2, 4, 1, 1), (2, 4, 1, 1)),
+                           upsample_parameters=((2, 4, 1, 1, 0), (2, 4, 1, 1, 0)),
+                           num_embeddings=16384,
+                           embedding_dim=32,
+                           ckpt_path='/home/simone.sarrocco/thesis/project/models/diffusion_model/GenerativeModels/tutorials/generative/2d_vqgan/reconstruction_new_embed_dim_32_shorter_architecture/checkpoints/vqgan_epoch_50.ckpt'
+                           ).eval()
+        # self.quant_conv = torch.nn.Conv2d(32, 32, 1)
         self.vqgan.train = disabled_train
         for param in self.vqgan.parameters():
             param.requires_grad = False
@@ -86,9 +88,9 @@ class LatentBrownianBridgeModel(BrownianBridgeModel):
     def encode(self, x, cond=True, normalize=None):
         normalize = self.model_config.normalize_latent if normalize is None else normalize
         model = self.vqgan
-        x_latent = model.encode(x)  # the output here is a tensor with z_channels channels, so the latent space has dimension (b, c, h, w, z_channels), where h and w depends on how many downsampling blocks we choose
-        if not self.model_config.latent_before_quant_conv:
-            x_latent = model.quant_conv(x_latent)  # here we apply a convolutional layer with input channels z_channels and output channels embed_dim
+        x_latent = model.encode(x)  # the output here is a tensor with z_channels channels, so the latent space has dimension (h, w, z_channels), where h and w depends on how many downsampling blocks we choose
+        # if not self.model_config.latent_before_quant_conv:
+        #    x_latent = model.quant_conv(x_latent)  # here we apply a convolutional layer with input channels z_channels and output channels embed_dim
         if normalize:
             if cond:
                 x_latent = (x_latent - self.cond_latent_mean) / self.cond_latent_std
@@ -108,18 +110,25 @@ class LatentBrownianBridgeModel(BrownianBridgeModel):
         model = self.vqgan
         if self.model_config.latent_before_quant_conv:
             x_latent = model.quant_conv(x_latent)
-        x_latent_quant, _, _ = model.quantize(x_latent)  # after the BBDM process, we quantize the latent representation and then decode it back to the pixel space through the decoder of the VQGAN
+        x_latent_quant, _ = model.quantize(x_latent)  # after the BBDM process, we quantize the latent representation and then decode it back to the pixel space through the decoder of the VQGAN
+        print(f'x_latent_quant shape after quantization: {x_latent_quant.shape}')
+        print(f'x_latent_quant pixel range after quantization: {torch.min(x_latent_quant), torch.max(x_latent_quant)}')
         out = model.decode(x_latent_quant)
         return out
 
     @torch.no_grad()
     def sample(self, x_cond, clip_denoised=False, sample_mid_step=False):
-        x_cond_latent = self.encode(x_cond, cond=True)  # x_cond: ART10 --> x_cond_latent: latent encoding of ART10
+        print(f'Sampling: x_cond shape before encoding: {x_cond.shape}')
+        print(f'Sampling: x_cond pixel range before encoding: {torch.min(x_cond)}, {torch.max(x_cond)}')
+        x_cond_latent = self.encode(x_cond, cond=True)  # x_cond: ART10 --> x_cond_latent: latent encoding of ART10, which is the starting point of the diffusion process/brownian bridge
+        print(f'Sampling: x_cond_latent shape after encoding: {x_cond_latent.shape}')
+        print(f'Sampling: x_cond_latent pixel range after encoding: {torch.min(x_cond_latent), torch.max(x_cond_latent)}')
         if sample_mid_step:
             temp, one_step_temp = self.p_sample_loop(y=x_cond_latent,  # the latent encoding of ART10 is our "y"
                                                      context=self.get_cond_stage_context(x_cond),
                                                      clip_denoised=clip_denoised,
                                                      sample_mid_step=sample_mid_step)
+            # p_sample_loop performs the entire brownian-bridge process, returning the latent reconstruction of x, so we go from the latent representation of x_cond (ART10) to the latent representation of x (pseudoART100)
             out_samples = []
             for i in tqdm(range(len(temp)), initial=0, desc="save output sample mid steps", dynamic_ncols=True,
                           smoothing=0.01):
@@ -136,12 +145,17 @@ class LatentBrownianBridgeModel(BrownianBridgeModel):
                 one_step_samples.append(out.to('cpu'))
             return out_samples, one_step_samples
         else:
+            # p_sample_loop performs the entire brownian-bridge process, returning the latent reconstruction of x, so we go from the latent representation of x_cond (ART10) to the latent representation of x (pseudoART100)
             temp = self.p_sample_loop(y=x_cond_latent,
                                       context=self.get_cond_stage_context(x_cond),
                                       clip_denoised=clip_denoised,
                                       sample_mid_step=sample_mid_step)
             x_latent = temp
+            print(f'Sampling: x_latent shape after p_sample_loop (before decoding): {x_latent.shape}')
+            print(f'Sampling: x_latent pixel range after p_sample_loop (before decoding): {torch.min(x_latent)}, {torch.max(x_latent)}')
             out = self.decode(x_latent, cond=False)
+            print(f'Sampling: out shape after decoding (our final output): {out.shape}')
+            print(f'Sampling: out pixel range after decoding (our final output): {torch.min(out), torch.max(out)}')
             return out
 
     @torch.no_grad()

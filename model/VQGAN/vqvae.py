@@ -19,8 +19,8 @@ from monai.networks.blocks import Convolution
 from monai.networks.layers import Act
 from monai.utils.misc import ensure_tuple_rep
 import numpy as np
-# from model.VQGAN.vector_quantizer import EMAQuantizer, VectorQuantizer
-from model.VQGAN.quantize import VectorQuantizer2 as VectorQuantizer
+from model.VQGAN.vector_quantizer import EMAQuantizer, VectorQuantizer
+# from model.VQGAN.quantize import VectorQuantizer2 as VectorQuantizer
 
 __all__ = ["VQVAE"]
 
@@ -682,6 +682,7 @@ class VQVAE(nn.Module):
         output_act: tuple | str | None = None,
         ddp_sync: bool = True,
         use_checkpointing: bool = False,
+        ckpt_path: str = "",
     ):
         super().__init__()
 
@@ -692,6 +693,7 @@ class VQVAE(nn.Module):
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
         self.use_checkpointing = use_checkpointing
+        self.ckpt_path = ckpt_path
 
         if isinstance(num_res_channels, int):
             num_res_channels = ensure_tuple_rep(num_res_channels, len(num_channels))
@@ -732,9 +734,12 @@ class VQVAE(nn.Module):
                 "`upsample_parameters` should be a tuple of tuples with the same length as `num_channels`."
             )
 
+        if ckpt_path is not None:
+            self.init_from_ckpt(ckpt_path, ignore_keys=[])
+
         self.num_res_layers = num_res_layers
         self.num_res_channels = num_res_channels
-        """
+
         self.encoder = Encoder(
             spatial_dims=spatial_dims,
             in_channels=in_channels,
@@ -772,8 +777,8 @@ class VQVAE(nn.Module):
                 ddp_sync=ddp_sync,
             )
         )
-        """
 
+        """
         self.encoder = EncoderBBDM(
             ch=num_channels[0],
             out_ch=out_channels,
@@ -807,6 +812,18 @@ class VQVAE(nn.Module):
 
         self.quant_conv = torch.nn.Conv2d(embedding_dim, embedding_dim, 1)
         self.post_quant_conv = torch.nn.Conv2d(embedding_dim, embedding_dim, 1)
+        """
+
+    def init_from_ckpt(self, path, ignore_keys=list()):
+        sd = torch.load(path, map_location="cpu")["state_dict"]
+        keys = list(sd.keys())
+        for k in keys:
+            for ik in ignore_keys:
+                if k.startswith(ik):
+                    print("Deleting key {} from state_dict.".format(k))
+                    del sd[k]
+        self.load_state_dict(sd, strict=False)
+        print(f"Restored from {path}")
 
     def encode(self, images: torch.Tensor) -> torch.Tensor:
         if self.use_checkpointing:
@@ -814,17 +831,17 @@ class VQVAE(nn.Module):
         else:
             return self.encoder(images)
 
-    def quantize(self, encodings: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        # x_loss, x = self.quantizer(encodings)
-        quant, embed_loss, info = self.quantizer(encodings)
-        # return x, x_loss
-        return quant, embed_loss, info
+    def quantize(self, encodings: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        x_loss, x = self.quantizer(encodings)
+        # quant, embed_loss, info = self.quantizer(encodings)
+        return x, x_loss
+        # return quant, embed_loss, info
 
     def decode(self, quantizations: torch.Tensor) -> torch.Tensor:
         if self.use_checkpointing:
             return torch.utils.checkpoint.checkpoint(self.decoder, quantizations, use_reentrant=False)
         else:
-            quantizations = self.post_quant_conv(quantizations)
+            # quantizations = self.post_quant_conv(quantizations)
             return self.decoder(quantizations)
 
     def index_quantize(self, images: torch.Tensor) -> torch.Tensor:
@@ -834,7 +851,7 @@ class VQVAE(nn.Module):
         return self.decode(self.quantizer.embed(embedding_indices))
 
     def forward(self, images: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        quantizations, quantization_losses, info = self.quantize(self.encode(images))
+        quantizations, quantization_losses = self.quantize(self.encode(images))
         reconstruction = self.decode(quantizations)
 
         return reconstruction, quantization_losses

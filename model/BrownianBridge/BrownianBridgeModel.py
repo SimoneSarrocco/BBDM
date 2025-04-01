@@ -109,14 +109,18 @@ class BrownianBridgeModel(nn.Module):
         noise = default(noise, lambda: torch.randn_like(x0))
 
         x_t, objective = self.q_sample(x0, y, t, noise)
+        # x_t is the transformation of our input x0 at timestep t
+        # objective is the true quantity that we are trying to reconstruct
         objective_recon = self.denoise_fn(x_t, timesteps=t, context=context)
-
+        # we get a reconstruction of x_t as output from the U-Net model
         if self.loss_type == 'l1':
             recloss = (objective - objective_recon).abs().mean()
         elif self.loss_type == 'l2':
             recloss = F.mse_loss(objective, objective_recon)
         else:
             raise NotImplementedError()
+
+        # the loss is computed between reconstruction and objective
 
         x0_recon = self.predict_x0_from_objective(x_t, y, t, objective_recon)
         log_dict = {
@@ -132,7 +136,7 @@ class BrownianBridgeModel(nn.Module):
         sigma_t = torch.sqrt(var_t)
 
         if self.objective == 'grad':
-            objective = m_t * (y - x0) + sigma_t * noise
+            objective = m_t * (y - x0) + sigma_t * noise  # this is the formulation in the paper, sigma_t is sqrt(delta_t) in the paper
         elif self.objective == 'noise':
             objective = noise
         elif self.objective == 'ysubx':
@@ -141,7 +145,7 @@ class BrownianBridgeModel(nn.Module):
             raise NotImplementedError()
 
         return (
-            (1. - m_t) * x0 + m_t * y + sigma_t * noise,
+            (1. - m_t) * x0 + m_t * y + sigma_t * noise,  # this is x_t, that is, the "transformation" of our input image at timestep t
             objective
         )
 
@@ -199,7 +203,8 @@ class BrownianBridgeModel(nn.Module):
             noise = torch.randn_like(x_t)
             x_tminus_mean = (1. - m_nt) * x0_recon + m_nt * y + torch.sqrt((var_nt - sigma2_t) / var_t) * \
                             (x_t - (1. - m_t) * x0_recon - m_t * y)
-
+            # this is the mean of the posterior distribution in the paper from which we sample in order to get the "slightly denoised" version of x_0 (i.e., x_{tau_{s-1}})
+            # slightly denoised image = x_tminus_mean + sigma_t*noise (i.e., we are sampling from the posterior distr.)
             return x_tminus_mean + sigma_t * noise, x0_recon
 
     @torch.no_grad()
@@ -217,7 +222,7 @@ class BrownianBridgeModel(nn.Module):
                 one_step_imgs.append(x0_recon)
             return imgs, one_step_imgs
         else:
-            img = y
+            img = y  # we start from the latent representation of x_cond, i.e., latent ART10
             for i in tqdm(range(len(self.steps)), desc=f'sampling loop time step', total=len(self.steps)):
                 img, _ = self.p_sample(x_t=img, y=y, context=context, i=i, clip_denoised=clip_denoised)
             return img
