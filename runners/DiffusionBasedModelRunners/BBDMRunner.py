@@ -173,6 +173,12 @@ class BBDMRunner(DiffusionBaseRunner):
         x_cond = x_cond.to(self.config.training.device[0])
 
         loss, additional_info = net(x, x_cond)
+        # x and x_cond are encoded to the latent space
+        # x_t is computed and given as input to the U-Net model (x_t = x_0 + objective)
+        # the unet is trained to minimize L1 or L2 loss between objective and model output (objective_recon)
+        # x0_recon is computed by subtracting the model output from x_t
+        # at the end of the training iteration, the value of the loss and a dict containing loss and x0_recon are returned
+
         if write and self.is_main_process:
             self.writer.add_scalar(f'loss/{stage}', loss, step)
             if additional_info.__contains__('recloss_noise'):
