@@ -4,7 +4,7 @@ training:
   n_epochs: 1000
   n_steps: 990000
   save_interval: 50
-  sample_interval: 2
+  sample_interval: 50
   validation_interval: 1
   accumulate_grad_batches: 1
 
@@ -20,7 +20,11 @@ data:
     image_size: 496
     channels: 1
     to_normal: False
-    flip: True
+    transform: True
+    resize: False
+    gaussian_noise: False
+    clip: False
+    blur: False
   train:
     batch_size: 1
     shuffle: True
@@ -29,7 +33,7 @@ data:
     shuffle: False
   test:
     batch_size: 1
-    # shuffle: False
+    shuffle: False
 
 model:
   model_name: "LBBDM-f4-4th" # part of result path
@@ -73,7 +77,7 @@ model:
         dropout: 0.0
 
       lossconfig:
-        target: vqperceptual.VQLPIPSWithDiscriminator
+        target: torch.nn.Identity
 
   BB:
     optimizer:
