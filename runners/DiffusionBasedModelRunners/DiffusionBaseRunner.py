@@ -30,7 +30,7 @@ class DiffusionBaseRunner(BaseRunner, ABC):
         for i, sample in enumerate(tqdm(all_samples, total=len(all_samples), desc='saving images')):
             if (gif_interval > 0 and i % gif_interval == 0) or i % save_interval == 0 or i > head_threshold or i < tail_threshold:
                 sample = sample.view(batch_size, dataset_config.channels,
-                                     dataset_config.image_size, dataset_config.image_size)
+                                     512, 768)
 
                 image_grid = get_image_grid(sample, grid_size, to_normal=dataset_config.to_normal)
                 # if self.config.task == 'colorization':
