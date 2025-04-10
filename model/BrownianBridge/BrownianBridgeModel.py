@@ -180,7 +180,7 @@ class BrownianBridgeModel(nn.Module):
             objective_recon = self.denoise_fn(x_t, timesteps=t, context=context)
             x0_recon = self.predict_x0_from_objective(x_t, y, t, objective_recon=objective_recon)
             if clip_denoised:
-                x0_recon.clamp_(-1., 1.)
+                x0_recon.clamp_(-3.273, 7.147)
                 # x0_recon.clamp_(0., 1.)  # todo
             return x0_recon, x0_recon
         else:
@@ -190,7 +190,7 @@ class BrownianBridgeModel(nn.Module):
             objective_recon = self.denoise_fn(x_t, timesteps=t, context=context)
             x0_recon = self.predict_x0_from_objective(x_t, y, t, objective_recon=objective_recon)
             if clip_denoised:
-                x0_recon.clamp_(-1., 1.)
+                x0_recon.clamp_(-3.273, 7.147)
                 # x0_recon.clamp_(0., 1.)  # todo
 
             m_t = extract(self.m_t, t, x_t.shape)
