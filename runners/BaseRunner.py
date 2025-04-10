@@ -488,12 +488,12 @@ class BaseRunner(ABC):
                             torch.save(optimizer_scheduler_states,
                                        os.path.join(self.config.result.ckpt_path,
                                                     f'latest_optim_sche_{epoch + 1}.pth'))
-                            torch.save(model_states,
-                                       os.path.join(self.config.result.ckpt_path,
-                                                    f'last_model.pth'))
-                            torch.save(optimizer_scheduler_states,
-                                       os.path.join(self.config.result.ckpt_path,
-                                                    f'last_optim_sche.pth'))
+                            # torch.save(model_states,
+                            #           os.path.join(self.config.result.ckpt_path,
+                            #                        f'last_model.pth'))
+                            # torch.save(optimizer_scheduler_states,
+                            #           os.path.join(self.config.result.ckpt_path,
+                            #                        f'last_optim_sche.pth'))
 
                             # save top_k checkpoints
                             model_ckpt_name = f'top_model_epoch_{epoch + 1}.pth'
