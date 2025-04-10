@@ -168,7 +168,6 @@ class BBDMRunner(DiffusionBaseRunner):
     def loss_fn(self, net, batch, epoch, step, opt_idx=0, stage='train', write=True):
         # (x, x_name), (x_cond, x_cond_name) = batch
         x, x_cond = batch
-        # x, x_cond = torch.split(batch, 1, 1)  # todo
         x = x.to(self.config.training.device[0])
         x_cond = x_cond.to(self.config.training.device[0])
 
@@ -197,7 +196,6 @@ class BBDMRunner(DiffusionBaseRunner):
 
         # (x, x_name), (x_cond, x_cond_name) = batch
         x, x_cond = batch
-        # x, x_cond = torch.split(batch, 1, 1)  # todo
 
         batch_size = x.shape[0] if x.shape[0] < 4 else 4
 
@@ -206,22 +204,36 @@ class BBDMRunner(DiffusionBaseRunner):
 
         grid_size = 4
 
-        # samples, one_step_samples = net.sample(x_cond,
-        #                                        clip_denoised=self.config.testing.clip_denoised,
-        #                                        sample_mid_step=True)
-        # self.save_images(samples, reverse_sample_path, grid_size, save_interval=200,
-        #                  writer_tag=f'{stage}_sample' if stage != 'test' else None)
+        samples, one_step_samples, vqgan_reconstruction_art10, vqgan_reconstruction_pseudoart100 = net.sample(batch,
+                                                                                                              clip_denoised=self.config.testing.clip_denoised,
+                                                                                                              sample_mid_step=True,
+                                                                                                              device=self.config.training.device[0])
+        self.save_images(samples, reverse_sample_path, grid_size, save_interval=50, gif_interval=50,
+                         writer_tag=f'{stage}_sample' if stage != 'test' else None)
+
+        self.save_images(one_step_samples, reverse_one_step_path, grid_size, save_interval=50, gif_interval=50,
+                         writer_tag=f'{stage}_one_step_sample' if stage != 'test' else None)
         #
-        # self.save_images(one_step_samples, reverse_one_step_path, grid_size, save_interval=200,
-        #                  writer_tag=f'{stage}_one_step_sample' if stage != 'test' else None)
-        #
-        # sample = samples[-1]
-        sample = net.sample(x_cond, clip_denoised=self.config.testing.clip_denoised).to('cpu')
+        sample = samples[-1]
+        # sample = net.sample(x_cond, clip_denoised=self.config.testing.clip_denoised).to('cpu')
+        # sample, vqgan_reconstruction_without_diffusion = net.sample(x_cond, clip_denoised=self.config.testing.clip_denoised)
+        sample = sample.to('cpu')
         image_grid = get_image_grid(sample, grid_size, to_normal=self.config.data.dataset_config.to_normal)
         im = Image.fromarray(image_grid)
         im.save(os.path.join(sample_path, 'skip_sample.png'))
+
+        vqgan_recon_grid_art10 = get_image_grid(vqgan_reconstruction_art10, grid_size, to_normal=self.config.data.dataset_config.to_normal)
+        vqgan_recon_art10 = Image.fromarray(vqgan_recon_grid_art10)
+        vqgan_recon_art10.save(os.path.join(sample_path, 'skip_sample_vqgan_reconstruction_art10.png'))
+
+        vqgan_recon_grid_pseudoart100 = get_image_grid(vqgan_reconstruction_pseudoart100, grid_size, to_normal=self.config.data.dataset_config.to_normal)
+        vqgan_recon_pseudoart100 = Image.fromarray(vqgan_recon_grid_pseudoart100)
+        vqgan_recon_pseudoart100.save(os.path.join(sample_path, 'skip_sample_vqgan_reconstruction_pseudoart100.png'))
+
         if stage != 'test':
             self.writer.add_image(f'{stage}_skip_sample', image_grid, self.global_step, dataformats='HWC')
+            self.writer.add_image(f'{stage}_skip_vqgan_recon_art10', vqgan_recon_grid_art10, self.global_step, dataformats='HWC')
+            self.writer.add_image(f'{stage}_skip_vqgan_recon_pseudoart100', vqgan_recon_grid_pseudoart100, self.global_step, dataformats='HWC')
 
         image_grid = get_image_grid(x_cond.to('cpu'), grid_size, to_normal=self.config.data.dataset_config.to_normal)
         im = Image.fromarray(image_grid)
