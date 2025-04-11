@@ -106,15 +106,11 @@ class LatentBrownianBridgeModel(BrownianBridgeModel):
     def encode(self, x, cond=True, normalize=None):
         normalize = self.model_config.normalize_latent if normalize is None else normalize
         model = self.vqgan
-        x_latent = model.encode(x)  # the output here is a tensor with z_channels channels, so the latent space has dimension (h, w, z_channels), where h and w depends on how many downsampling blocks we choose
+        # x_latent = model.encode(x)  # the output here is a tensor with z_channels channels, so the latent space has dimension (h, w, z_channels), where h and w depends on how many downsampling blocks we choose
+        quantizations = model.encode_stage_2_inputs(x, quantized=True)
         # if not self.model_config.latent_before_quant_conv:
         #    x_latent = model.quant_conv(x_latent)  # here we apply a convolutional layer with input channels z_channels and output channels embed_dim
-        if normalize:
-            if cond:
-                x_latent = (x_latent - self.cond_latent_mean) / self.cond_latent_std
-            else:
-                x_latent = (x_latent - self.ori_latent_mean) / self.ori_latent_std
-        return x_latent  # this is the latent representation of our original image, so we haven't already applied the vector quantization
+        return quantizations  # this is the latent representation of our original image, so we haven't already applied the vector quantization
         # in other words, we apply the BBDM on the latent representation and not on the vector quantization
 
     @torch.no_grad()
@@ -129,10 +125,11 @@ class LatentBrownianBridgeModel(BrownianBridgeModel):
         if self.model_config.latent_before_quant_conv:
             x_latent = model.quant_conv(x_latent)
         # x_latent_quant, _, _ = model.quantize(x_latent)  # after the BBDM process, we quantize the latent representation and then decode it back to the pixel space through the decoder of the VQGAN
-        x_latent_quant, _ = model.quantize(x_latent)  # after the BBDM process, we quantize the latent representation and then decode it back to the pixel space through the decoder of the VQGAN
+        # x_latent_quant, _ = model.quantize(x_latent)  # after the BBDM process, we quantize the latent representation and then decode it back to the pixel space through the decoder of the VQGAN
         # print(f'x_latent_quant shape after quantization: {x_latent_quant.shape}')
         # print(f'x_latent_quant pixel range after quantization: {torch.min(x_latent_quant), torch.max(x_latent_quant)}')
-        out = model.decode(x_latent_quant)
+        # out = model.decode(x_latent_quant)
+        out = model.decode_stage_2_outputs(x_latent)
         return out
 
     @torch.no_grad()
