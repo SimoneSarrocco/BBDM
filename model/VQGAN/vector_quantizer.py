@@ -158,7 +158,7 @@ class EMAQuantizer(nn.Module):
         else:
             pass
 
-    def forward(self, inputs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def forward(self, inputs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         flat_input, encodings, encoding_indices = self.quantize(inputs)
         quantized = self.embed(encoding_indices)
 
@@ -185,7 +185,7 @@ class EMAQuantizer(nn.Module):
         # Straight Through Estimator
         quantized = inputs + (quantized - inputs).detach()
 
-        return quantized, loss, encoding_indices
+        return quantized, loss, encoding_indices, encodings
 
 
 class VectorQuantizer(torch.nn.Module):
@@ -206,7 +206,7 @@ class VectorQuantizer(torch.nn.Module):
         self.perplexity: torch.Tensor = torch.rand(1)
 
     def forward(self, inputs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        quantized, loss, encoding_indices = self.quantizer(inputs)
+        quantized, loss, encoding_indices, encoding_one_hot = self.quantizer(inputs)
 
         # Perplexity calculations
         avg_probs = (
@@ -222,7 +222,7 @@ class VectorQuantizer(torch.nn.Module):
     def embed(self, embedding_indices: torch.Tensor) -> torch.Tensor:
         return self.quantizer.embed(embedding_indices=embedding_indices)
 
-    def quantize(self, encodings: torch.Tensor) -> torch.Tensor:
-        _, _, encoding_indices = self.quantizer(encodings)
+    def quantize(self, encodings: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        _, _, encoding_indices, encodings_one_hot = self.quantizer(encodings)
 
-        return encoding_indices
+        return encoding_indices, encodings_one_hot
