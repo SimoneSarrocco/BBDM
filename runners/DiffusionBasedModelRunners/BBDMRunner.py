@@ -263,19 +263,27 @@ class BBDMRunner(DiffusionBaseRunner):
             # x, x_cond = torch.split(batch, 1, 1)  # todo
             x = x.to(self.config.training.device[0])
             x_cond = x_cond.to(self.config.training.device[0])
+            # print(f'Shape of x: {x.shape}')
+            # print(f'Shape of x_cond: {x_cond.shape}')
 
             for j in range(sample_num):
-                sample = net.sample(x_cond, clip_denoised=False)
+                samples, _, _ = net.sample(test_batch, clip_denoised=False, device=self.config.training.device[0], sample_mid_step=False)
+                # print(f'Len of samples: {len(samples)}')
                 # sample = net.sample_vqgan(x)
+                sample = samples[-1:, ...]
+                # print(f'Shape of sample: {sample.shape}')
                 for i in range(batch_size):
                     condition = x_cond[i].detach().clone()
+                    # print(f'Shape of condition: {condition.shape}')
                     gt = x[i]
+                    # print(f'Shape of gt: {gt.shape}')
                     result = sample[i]
+                    # print(f'Shape of result: {result.shape}')
                     if j == 0:
                         save_single_image(condition, condition_path, f'x_cond_{i}.png', to_normal=to_normal)
                         save_single_image(gt, gt_path, f'x_{i}.png', to_normal=to_normal)
                     if sample_num > 1:
-                        result_path_i = make_dir(os.path.join(result_path, f'x_{i}'))
-                        save_single_image(result, result_path_i, f'output_{j}.png', to_normal=to_normal)
+                        result_path_i = make_dir(os.path.join(result_path, f'x_{j}'))
+                        save_single_image(result, result_path_i, f'output_{i}.png', to_normal=to_normal)
                     else:
                         save_single_image(result, result_path, f'x_{i}.png', to_normal=to_normal)
