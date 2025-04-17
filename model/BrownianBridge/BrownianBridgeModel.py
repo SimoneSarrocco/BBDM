@@ -107,7 +107,7 @@ class BrownianBridgeModel(nn.Module):
         """
         b, c, h, w = x0.shape
         noise = default(noise, lambda: torch.randn_like(x0))
-
+        """
         x_t, objective = self.q_sample(x0, y, t, noise)
         # x_t is the transformation of our input x0 at timestep t
         # objective is the true quantity that we are trying to reconstruct
@@ -128,6 +128,50 @@ class BrownianBridgeModel(nn.Module):
             "x0_recon": x0_recon
         }
         return recloss, log_dict
+        """
+        n_embed = 16384
+
+        # Get continuous latent variables via Brownian Bridge process
+        x_t, continuous_objective = self.q_sample(x0, y, t, noise)
+        # print(f'Shape of x_t: {x_t.shape}')
+        # print(f'Shape of continuous_objective: {continuous_objective.shape}')
+
+        # Get quantization indices
+        with torch.no_grad():
+            codebook_indices, _ = self.vqgan.quantizer.quantize(continuous_objective)
+            # Shape of codebook_indices is [1, 128, 192] after quantization
+            # targets = codebook_indices.flatten()  # [128*192]
+            # print(f'Shape of codebook_indices/targets: {codebook_indices.shape}')
+            # targets = codebook_one_hot  # [B*D*H*W, n_embed] = [1*1*128*192, 16384]
+            targets = codebook_indices.view(-1)
+            # print(f'Shape of targets: {targets.shape}')
+
+        # Get model predictions [1, n_embed, 128, 192]
+        logits = self.denoise_fn(x_t, timesteps=t, context=context)
+        # print(f'Shape of logits: {logits.shape}')
+
+        # Reshape for cross-entropy
+        logits = logits.view(-1, n_embed)  # [128*192, n_embed] = [1*1*128*192, 16384]
+        # targets = targets.reshape(-1)  # [128*192]
+        # print(f'Shape of logits after reshaping: {logits.shape}')
+
+        # Compute loss
+        loss = F.cross_entropy(logits, targets)
+        # print(f'Value of cross-entropy loss: {loss}')
+
+        # Reconstruction
+        with torch.no_grad():
+            pred_indices = logits.argmax(dim=1)  # [128*192] --> must be of shape [B,D,H,W,1] = [1, 128, 192]
+            pred_indices = pred_indices.view(h, w)  # [128,192]
+            pred_indices = pred_indices.unsqueeze(0)  # [1,128,192]
+            # pred_indices = pred_indices.view(1, 1, h, w, 1)  # [1,1,128,192,1]
+            objective_recon = self.vqgan.quantizer.embed(pred_indices)  # returns a tensor of shape [B, self.embedding_dim, D, H, W] = [1, 32, 1, 128, 192]
+            # print(f'Shape of objective_recon: {objective_recon.shape}')
+            # objective_recon = objective_recon.squeeze(2)  # [1,32,128,192]
+            x0_recon = self.predict_x0_from_objective(x_t, y, t, objective_recon)
+            # print(f'Shape of x0_recon: {x0_recon.shape}')
+
+        return loss, {"loss": loss, "x0_recon": x0_recon}
 
     def q_sample(self, x0, y, t, noise=None):
         noise = default(noise, lambda: torch.randn_like(x0))
@@ -175,10 +219,26 @@ class BrownianBridgeModel(nn.Module):
     @torch.no_grad()
     def p_sample(self, x_t, y, context, i, clip_denoised=False):
         b, *_, device = *x_t.shape, x_t.device
+        b, c, h, w = y.shape
+        n_embed = 16384
         if self.steps[i] == 0:
             t = torch.full((x_t.shape[0],), self.steps[i], device=x_t.device, dtype=torch.long)
-            objective_recon = self.denoise_fn(x_t, timesteps=t, context=context)
-            x0_recon = self.predict_x0_from_objective(x_t, y, t, objective_recon=objective_recon)
+
+            objective_recon_ids = self.denoise_fn(x_t, timesteps=t, context=context)
+            objective_recon_ids = objective_recon_ids.view(-1, n_embed)  # [128*192, n_embed] = [1*1*128*192, 16384]
+
+            pred_indices = objective_recon_ids.argmax(dim=1)  # [128*192]
+            # print(f'Shape of pred_indices during sampling: {pred_indices.shape}')
+            pred_indices = pred_indices.view(h, w)  # [1, 128, 192]
+            # print(f'Shape of pred_indices during sampling after reshape/view: {pred_indices.shape}')
+            pred_indices = pred_indices.unsqueeze(0)  # [1,1,128,192]
+            # print(f'Shape of pred_indices during sampling after unsqueeze: {pred_indices.shape}')
+            # pred_indices = pred_indices.view(1, 1, h, w, 1)  # [1,1,128,192,1]
+            objective_recon = self.vqgan.quantizer.embed(pred_indices)  # returns a tensor of shape [B, self.embedding_dim, D, H, W] = [1, 32, 128, 192]
+            # print(f'Shape of objective_recon during sampling: {objective_recon.shape}')
+
+            x0_recon = self.predict_x0_from_objective(x_t, y, t, objective_recon)
+            # print(f'Shape of x0_recon during sampling: {x0_recon.shape}')
             if clip_denoised:
                 x0_recon.clamp_(-3.273, 7.147)
                 # x0_recon.clamp_(0., 1.)  # todo
@@ -187,8 +247,21 @@ class BrownianBridgeModel(nn.Module):
             t = torch.full((x_t.shape[0],), self.steps[i], device=x_t.device, dtype=torch.long)
             n_t = torch.full((x_t.shape[0],), self.steps[i+1], device=x_t.device, dtype=torch.long)
 
-            objective_recon = self.denoise_fn(x_t, timesteps=t, context=context)
-            x0_recon = self.predict_x0_from_objective(x_t, y, t, objective_recon=objective_recon)
+            objective_recon_ids = self.denoise_fn(x_t, timesteps=t, context=context)
+            objective_recon_ids = objective_recon_ids.view(-1, n_embed)  # [128*192, n_embed] = [1*1*128*192, 16384]
+
+            pred_indices = objective_recon_ids.argmax(dim=1)  # [128*192]
+            # print(f'Shape of pred_indices during sampling: {pred_indices.shape}')
+            pred_indices = pred_indices.view(h, w)  # [128, 192]
+            # print(f'Shape of pred_indices during sampling after reshape/view: {pred_indices.shape}')
+            pred_indices = pred_indices.unsqueeze(0)  # [1,128,192]
+            # print(f'Shape of pred_indices during sampling after unsqueeze: {pred_indices.shape}')
+            # pred_indices = pred_indices.view(1, 1, h, w, 1)  # [1,1,128,192,1]
+            objective_recon = self.vqgan.quantizer.embed(pred_indices)  # returns a tensor of shape [B, self.embedding_dim, D, H, W] = [1, 32, 128, 192]
+            # print(f'Shape of objective_recon during sampling: {objective_recon.shape}')
+
+            x0_recon = self.predict_x0_from_objective(x_t, y, t, objective_recon)
+            # print(f'Shape of x0_recon during sampling: {x0_recon.shape}')
             if clip_denoised:
                 x0_recon.clamp_(-3.273, 7.147)
                 # x0_recon.clamp_(0., 1.)  # todo

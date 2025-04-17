@@ -208,6 +208,10 @@ class BBDMRunner(DiffusionBaseRunner):
                                                                                                               clip_denoised=self.config.testing.clip_denoised,
                                                                                                               sample_mid_step=True,
                                                                                                               device=self.config.training.device[0])
+
+        # samples, one_step_samples = net.sample(x_cond, clip_denoised=self.config.testing.clip_denoised,
+        #                                       sample_mid_step=True)
+
         self.save_images(samples, reverse_sample_path, grid_size, save_interval=50, gif_interval=50,
                          writer_tag=f'{stage}_sample' if stage != 'test' else None)
 

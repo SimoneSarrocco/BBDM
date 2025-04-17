@@ -467,7 +467,7 @@ class UNetModel(nn.Module):
         use_spatial_transformer=False,    # custom transformer support
         transformer_depth=1,              # custom transformer support
         context_dim=None,                 # custom transformer support
-        n_embed=None,                     # custom support for prediction of discrete ids into codebook of first stage vq model
+        n_embed=16384,                     # custom support for prediction of discrete ids into codebook of first stage vq model
         legacy=True,
         condition_key="concat",
     ):
@@ -693,7 +693,8 @@ class UNetModel(nn.Module):
             self.id_predictor = nn.Sequential(
             normalization(ch),
             conv_nd(dims, model_channels, n_embed, 1),
-            #nn.LogSoftmax(dim=1)  # change to cross_entropy and produce non-normalized logits
+            # nn.LogSoftmax(dim=1)  # change to cross_entropy and produce non-normalized logits
+            # nn.Softmax(dim=1),
         )
 
         def get_parameter_number(model):
@@ -718,7 +719,7 @@ class UNetModel(nn.Module):
         self.middle_block.apply(convert_module_to_f32)
         self.output_blocks.apply(convert_module_to_f32)
 
-    def forward(self, x, timesteps=None, context=None, y=None,**kwargs):
+    def forward(self, x, timesteps=None, context=None, y=None, **kwargs):
         """
         Apply the model to an input batch.
         :param x: an [N x C x ...] Tensor of inputs.
