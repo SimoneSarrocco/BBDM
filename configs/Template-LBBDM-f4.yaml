@@ -41,8 +41,8 @@ model:
   latent_before_quant_conv: False
   normalize_latent: False
   only_load_latent_mean_std: False
-  # model_load_path: '/home/simone.sarrocco/thesis/project/models/diffusion_model/BBDM/results/data/LBBDM-latest-7th/checkpoint/latest_model_300.pth' # model checkpoint path
-  # optim_sche_load_path: '/home/simone.sarrocco/thesis/project/models/diffusion_model/BBDM/results/data/LBBDM-latest-7th/checkpoint/latest_optim_sche_300.pth' # optimizer scheduler checkpoint path
+  model_load_path: '/home/simone.sarrocco/thesis/project/models/diffusion_model/BBDM/results/data/LBBDM-latest-8th/checkpoint/latest_model_1090.pth' # model checkpoint path
+  optim_sche_load_path: '/home/simone.sarrocco/thesis/project/models/diffusion_model/BBDM/results/data/LBBDM-latest-8th/checkpoint/latest_optim_sche_1090.pth' # optimizer scheduler checkpoint path
 
   EMA:
     use_ema: True
