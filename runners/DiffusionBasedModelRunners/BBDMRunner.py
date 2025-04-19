@@ -5,12 +5,22 @@ from torch.utils.data import DataLoader
 
 from PIL import Image
 from Register import Registers
+import numpy as np
 from model.BrownianBridge.BrownianBridgeModel import BrownianBridgeModel
 from model.BrownianBridge.LatentBrownianBridgeModel import LatentBrownianBridgeModel
 from runners.DiffusionBasedModelRunners.DiffusionBaseRunner import DiffusionBaseRunner
 from runners.utils import weights_init, get_optimizer, get_dataset, make_dir, get_image_grid, save_single_image
 from tqdm.autonotebook import tqdm
+from torchmetrics.image import PeakSignalNoiseRatio
+from runners.DiffusionBasedModelRunners.ssim import SSIMMetric
 from torchsummary import summary
+
+
+def mean_flat(tensor):
+    """
+    Take the mean over all non-batch dimensions.
+    """
+    return tensor.mean(dim=list(range(1, len(tensor.shape))))
 
 
 @Registers.runners.register_with_name('BBDMRunner')
@@ -249,14 +259,22 @@ class BBDMRunner(DiffusionBaseRunner):
 
     @torch.no_grad()
     def sample_to_eval(self, net, test_loader, sample_path):
+        PSNR = PeakSignalNoiseRatio().to(self.config.training.device[0])
+        # SSIM = StructuralSimilarityIndexMeasure().to(dist_util.dev())
+        SSIM = SSIMMetric(spatial_dims=2)
+        # PERC = PerceptualLoss(spatial_dims=2, device=dist_util.dev())
+
         condition_path = make_dir(os.path.join(sample_path, f'condition'))
         gt_path = make_dir(os.path.join(sample_path, 'ground_truth'))
-        result_path = make_dir(os.path.join(sample_path, str(self.config.model.BB.params.sample_step)))
+        # result_path = make_dir(os.path.join(sample_path, str(self.config.model.BB.params.sample_step)))
+        result_path = make_dir(os.path.join(sample_path, f'checkpoint_{self.global_step}'))
+        result_folder_path = make_dir(os.path.join(result_path, str(self.config.model.BB.params.sample_step)))
 
         pbar = tqdm(test_loader, total=len(test_loader), smoothing=0.01)
         batch_size = self.config.data.test.batch_size
         to_normal = self.config.data.dataset_config.to_normal
         sample_num = self.config.testing.sample_num
+        mse_batches, ssim_batches, psnr_batches = [], [], []
         for test_batch in pbar:
             # (x, x_name), (x_cond, x_cond_name) = test_batch
             x, x_cond = test_batch
@@ -265,13 +283,14 @@ class BBDMRunner(DiffusionBaseRunner):
             x_cond = x_cond.to(self.config.training.device[0])
             # print(f'Shape of x: {x.shape}')
             # print(f'Shape of x_cond: {x_cond.shape}')
-
+            mse_batch, ssim_batch, psnr_batch = [], [], []
             for j in range(sample_num):
                 samples, _, _ = net.sample(test_batch, clip_denoised=False, device=self.config.training.device[0], sample_mid_step=False)
                 # print(f'Len of samples: {len(samples)}')
                 # sample = net.sample_vqgan(x)
                 sample = samples[-1:, ...]
                 # print(f'Shape of sample: {sample.shape}')
+
                 for i in range(batch_size):
                     condition = x_cond[i].detach().clone()
                     # print(f'Shape of condition: {condition.shape}')
@@ -280,10 +299,70 @@ class BBDMRunner(DiffusionBaseRunner):
                     result = sample[i]
                     # print(f'Shape of result: {result.shape}')
                     if j == 0:
-                        save_single_image(condition, condition_path, f'x_cond_{i}.png', to_normal=to_normal)
-                        save_single_image(gt, gt_path, f'x_{i}.png', to_normal=to_normal)
+                        save_single_image(condition, condition_path, f'x_cond_{pbar.n}_{i}.png', to_normal=to_normal)
+                        save_single_image(gt, gt_path, f'x_{pbar.n}_{i}.png', to_normal=to_normal)
+                        self.writer.add_image(f'Testing/condition_{pbar.n}_{j}', condition, pbar.n)
+                        self.writer.add_image(f'Testing/ground_truth_{pbar.n}_{j}', gt, pbar.n)
+                        self.writer.add_image(f'Testing/output_{pbar.n}_{j}', result, pbar.n)
                     if sample_num > 1:
-                        result_path_i = make_dir(os.path.join(result_path, f'x_{j}'))
+                        result_path_i = make_dir(os.path.join(result_folder_path, f'x_{j}'))
                         save_single_image(result, result_path_i, f'output_{i}.png', to_normal=to_normal)
                     else:
-                        save_single_image(result, result_path, f'x_{i}.png', to_normal=to_normal)
+                        save_single_image(result, result_folder_path, f'x_{pbar.n}_{i}.png', to_normal=to_normal)
+
+                    # We compute MSE, PSNR, and SSIM between pseudoART100 (target_img) and predicted reconstruction (output_img)
+                    # We remove the padded rows
+
+                    output = result.unsqueeze(0)
+                    output = output[:, :, 8:-8, :]
+                    target = gt.unsqueeze(0)
+                    target = target[:, :, 8:-8, :]
+                    # input = condition[:, 8:-8, :]
+
+                    mse_image = mean_flat((output - target) ** 2)
+                    psnr_image = PSNR(output, target)
+                    ssim_image = SSIM(output, target)
+                    # perceptual_batch = PERC(output, target)
+
+                    mse_batch.append(mse_image.mean().cpu())
+                    psnr_batch.append(psnr_image.cpu())
+                    ssim_batch.append(ssim_image.cpu())
+                    # perceptual_batches.append(perceptual_batch.cpu())
+
+            psnr_batch = np.asarray(psnr_batch, dtype=np.float32)
+            ssim_batch = np.asarray(ssim_batch, dtype=np.float32)
+            mse_batch = np.asarray(mse_batch, dtype=np.float32)
+            # perceptual_batches = np.asarray(perceptual_batches, dtype=np.float32)
+
+            # Calculate averages
+            psnr_batch_mean = np.mean(psnr_batch)
+            ssim_batch_mean = np.mean(ssim_batch)
+            mse_batch_mean = np.mean(mse_batch)
+            # avg_perceptual, std_perceptual = np.mean(perceptual_batches), np.std(perceptual_batches)
+
+            mse_batches.append(mse_batch_mean)
+            psnr_batches.append(psnr_batch_mean)
+            ssim_batches.append(ssim_batch_mean)
+
+        psnr_batches = np.asarray(psnr_batches, dtype=np.float32)
+        ssim_batches = np.asarray(ssim_batches, dtype=np.float32)
+        mse_batches = np.asarray(mse_batches, dtype=np.float32)
+        # perceptual_batches = np.asarray(perceptual_batches, dtype=np.float32)
+
+        # Calculate averages
+        avg_psnr, std_psnr = np.mean(psnr_batches), np.std(psnr_batches)
+        avg_ssim, std_ssim = np.mean(ssim_batches), np.std(ssim_batches)
+        avg_mse, std_mse = np.mean(mse_batches), np.std(mse_batches)
+        # avg_perceptual, std_perceptual = np.mean(perceptual_batches), np.std(perceptual_batches)
+
+        # Log average metrics to TensorBoard
+        metrics_summary = {
+            "PSNR": avg_psnr,
+            "SSIM": avg_ssim,
+            "MSE": avg_mse,
+            # "PERC_LOSS": avg_perceptual,
+        }
+        self.logger(
+            f"Testing metrics, checkpoint {self.global_step}: PSNR: {avg_psnr.item():.5f} ± {std_psnr.item():.5f} | SSIM: {avg_ssim.item():.5f} ± {std_ssim.item():.5f} | MSE: {avg_mse.item():.5f} ± {std_mse.item():.5f}")
+        for metric_name, value in metrics_summary.items():
+            self.writer.add_scalar(f"Testing_metrics/{metric_name}", value.item(), self.global_step)
