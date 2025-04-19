@@ -69,8 +69,14 @@ def save_single_image(image, save_path, file_name, to_normal=True):
     image = image.detach().clone()
     if to_normal:
         image = image.mul_(0.5).add_(0.5).clamp_(0, 1.)
-    image = image.mul_(255).add_(0.5).clamp_(0, 255).permute(1, 2, 0).to('cpu', torch.uint8).numpy()
-    im = Image.fromarray(image)
+    if image.shape[0] == 1:  # grayscale
+        image = image.mul_(255).add_(0.5).clamp_(0, 255)
+        image = image.squeeze(0)  # (H, W)
+        image = image.to('cpu', torch.uint8).numpy()
+        im = Image.fromarray(image, mode='L')  # 'L' = (8-bit pixels, black and white)
+    else:  # assume RGB
+        image = image.mul_(255).add_(0.5).clamp_(0, 255).permute(1, 2, 0).to('cpu', torch.uint8).numpy()
+        im = Image.fromarray(image)
     im.save(os.path.join(save_path, file_name))
 
 
