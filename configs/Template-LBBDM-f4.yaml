@@ -9,8 +9,8 @@ training:
   accumulate_grad_batches: 4
 
 testing:
-  clip_denoised: True
-  sample_num: 170
+  clip_denoised: False
+  sample_num: 1
 
 data:
   dataset_name: 'data'
@@ -36,13 +36,13 @@ data:
     shuffle: False
 
 model:
-  model_name: "LBBDM-latest-8th" # part of result path
+  model_name: "LBBDM-latest-9th" # part of result path
   model_type: "LBBDM" # specify a module
   latent_before_quant_conv: False
   normalize_latent: False
   only_load_latent_mean_std: False
-  model_load_path: '/home/simone.sarrocco/thesis/project/models/diffusion_model/BBDM/results/data/LBBDM-latest-8th/checkpoint/latest_model_1090.pth' # model checkpoint path
-  optim_sche_load_path: '/home/simone.sarrocco/thesis/project/models/diffusion_model/BBDM/results/data/LBBDM-latest-8th/checkpoint/latest_optim_sche_1090.pth' # optimizer scheduler checkpoint path
+  # model_load_path: '/home/simone.sarrocco/thesis/project/models/diffusion_model/BBDM/results/data/LBBDM-latest-8th/checkpoint/latest_model_1110.pth' # model checkpoint path
+  # optim_sche_load_path: '/home/simone.sarrocco/thesis/project/models/diffusion_model/BBDM/results/data/LBBDM-latest-8th/checkpoint/latest_optim_sche_1110.pth' # optimizer scheduler checkpoint path
 
   EMA:
     use_ema: True
